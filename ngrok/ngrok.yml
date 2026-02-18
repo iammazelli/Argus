@@ -1,0 +1,10 @@
+version: "2"
+tunnels:
+  # Túnel para o site (Nginx)
+  frontend:
+    proto: http
+    addr: nginx:80 # Aponta para o serviço 'nginx' na porta 80
+  # Túnel para o broker (EMQX)
+  mqtt:
+    proto: tcp
+    addr: emqx:1883 # Aponta para o serviço 'emqx' na porta 1883

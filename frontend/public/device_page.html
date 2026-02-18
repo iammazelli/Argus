@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Detalhes do Dispositivo - IoT Dashboard</title>
+    <script src="https://unpkg.com/mqtt/dist/mqtt.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; background-color: #f4f7f6; color: #333; }
+        header { background-color: #005f73; color: white; padding: 1rem 2rem; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        main { padding: 2rem; max-width: 1000px; margin: auto; }
+        .back-link { display: inline-block; margin-bottom: 1rem; color: #005f73; text-decoration: none; font-weight: bold; }
+        
+        .device-info { 
+            background-color: white; 
+            padding: 2rem; 
+            border-radius: 8px; 
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1); 
+            margin-bottom: 2rem;
+        }
+
+        .details-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        .detail-item {
+            padding: 1rem;
+            border: 1px solid #eee;
+            border-radius: 6px;
+        }
+
+        .detail-item h3 {
+            margin-top: 0;
+            color: #005f73;
+            font-size: 0.9rem;
+            border-bottom: 2px solid #005f73;
+            padding-bottom: 0.5rem;
+            text-transform: uppercase;
+        }
+
+        .detail-item p { margin-bottom: 0; font-size: 1.1rem; color: #555; }
+        
+        .data-cards-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .data-card {
+            background-color: #ffffff;
+            border-radius: 8px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 12px rgba(0, 95, 115, 0.1);
+            border-left: 5px solid #005f73;
+        }
+
+        .card-header {
+            font-size: 0.9rem;
+            color: #555;
+            font-weight: bold;
+            margin-bottom: 0.75rem;
+            text-transform: capitalize;
+        }
+
+        .card-value {
+            font-size: 2.2rem;
+            font-weight: 300;
+            color: #003440;
+            display: flex;
+            align-items: baseline;
+        }
+
+        .card-unit { font-size: 1.2rem; color: #777; margin-left: 0.35rem; }
+
+        .controls-container {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 6px;
+            align-items: flex-end;
+        }
+
+        .control-group { display: flex; flex-direction: column; gap: 5px; }
+        
+        select, input {
+            padding: 8px;
+            border-radius: 4px;
+            border: 1px solid #ccc;
+            background: white;
+        }
+
+        .btn-container { display: flex; gap: 10px; }
+
+        .btn-filter {
+            padding: 8px 16px;
+            background-color: #005f73;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: background 0.2s;
+        }
+
+        .btn-filter:hover { background-color: #003440; }
+        .btn-secondary { background-color: #6c757d; }
+        .btn-secondary:hover { background-color: #5a6268; }
+
+        .placeholder { grid-column: 1 / -1; text-align: center; color: #777; padding: 2rem; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1 id="device-name">Carregando Dispositivo...</h1>
+    </header>
+    <main>
+        <a href="/" class="back-link">&larr; Voltar para o Dashboard</a>
+        
+        <div class="device-info">
+            <h2>Detalhes do Dispositivo</h2>
+            <div class="details-grid">
+                <div class="detail-item"><h3>ID</h3><p id="device-id-str">...</p></div>
+                <div class="detail-item"><h3>Localização</h3><p id="device-location">...</p></div>
+                <div class="detail-item"><h3>Descrição</h3><p id="device-description">...</p></div>
+                <div class="detail-item"><h3>Criado em</h3><p id="device-created-at">...</p></div>
+            </div>
+        </div>
+
+        <div class="device-info">
+            <h2>Dados em Tempo Real</h2>
+            <div id="real-time-data-container" class="data-cards-grid">
+                <p class="placeholder">Aguardando dados do sensor via MQTT...</p>
+            </div>
+        </div>
+
+        <div class="device-info">
+            <h2>Histórico e Análise</h2>
+            <div class="controls-container">
+                <div class="control-group">
+                    <label for="variable-select">Variável:</label>
+                    <select id="variable-select">
+                        <option value="">Aguardando dados...</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label for="granularity-select">Granularidade:</label>
+                    <select id="granularity-select">
+                        <option value="realtime">Tempo Real (Live)</option>
+                        <option value="minutal">Minutal (DB)</option>
+                        <option value="hourly">Horário (DB)</option>
+                        <option value="daily">Diário (DB)</option>
+                    </select>
+                </div>
+                <div class="control-group">
+                    <label>Início:</label>
+                    <input type="datetime-local" id="start-date">
+                </div>
+                <div class="control-group">
+                    <label>Fim:</label>
+                    <input type="datetime-local" id="end-date">
+                </div>
+                <div class="btn-container">
+                    <button class="btn-filter" onclick="handleFilterClick()">Filtrar</button>
+                    <button class="btn-filter btn-secondary" onclick="clearFilters()">Limpar</button>
+                </div>
+            </div>
+            <div style="height: 350px; position: relative;">
+                <canvas id="history-chart"></canvas>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        let historyChart;
+        let discoveredKeys = new Set();
+        let currentGranularity = 'realtime';
+        let deviceId;
+        const maxDataPoints = 60;
+        const chartData = { labels: [] };
+        const units = { 'wind_speed': 'm/s', 'wind_direction': '°', 'temperature': '°C', 'umidade': '%', 'pressao': 'hPa', 'bateria': '%' };
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const params = new URLSearchParams(window.location.search);
+            deviceId = params.get('deviceId');
+            if (!deviceId) return;
+
+            fetchDeviceDetails(deviceId);
+            connectToMqtt(deviceId);
+            initChart();
+            setupEventListeners();
+            setupDateLimits();
+        });
+
+        function setupEventListeners() {
+            document.getElementById('variable-select').addEventListener('change', updateChartDisplay);
+            document.getElementById('granularity-select').addEventListener('change', (e) => {
+                currentGranularity = e.target.value;
+                if (currentGranularity === 'realtime') {
+                    resetToRealtimeChart();
+                }
+            });
+        }
+
+        async function fetchDeviceDetails(id) {
+            try {
+                const response = await fetch(`/api/devices/${id}`);
+                const device = await response.json();
+                document.getElementById('device-name').textContent = device.name || 'Dispositivo';
+                document.getElementById('device-id-str').textContent = device.device_id_str;
+                document.getElementById('device-location').textContent = device.location || 'N/A';
+                document.getElementById('device-description').textContent = device.description || 'N/A';
+                document.getElementById('device-created-at').textContent = new Date(device.created_at).toLocaleString('pt-BR');
+            } catch (e) { console.error(e); }
+        }
+
+        async function setupDateLimits() {
+            try {
+                const res = await fetch(`/api/history/${deviceId}/limits`);
+                const limits = await res.json();
+                if (limits.first && limits.last) {
+                    const minDate = new Date(limits.first).toISOString().slice(0, 16);
+                    const maxDate = new Date(limits.last).toISOString().slice(0, 16);
+                    const startInput = document.getElementById('start-date');
+                    const endInput = document.getElementById('end-date');
+                    
+                    startInput.min = minDate; startInput.max = maxDate;
+                    endInput.min = minDate; endInput.max = maxDate;
+                    
+                    // Mantém vazio por padrão para independência total
+                    startInput.value = "";
+                    endInput.value = "";
+                }
+            } catch (e) { console.error(e); }
+        }
+
+        function updateOrCreateCard(key, value) {
+            const container = document.getElementById('real-time-data-container');
+            const cardId = `card-${key}`;
+            let card = document.getElementById(cardId);
+            let val = (typeof value === 'object' && value !== null) ? (value.value || JSON.stringify(value)) : value;
+
+            if (!card) {
+                const placeholder = container.querySelector('.placeholder');
+                if (placeholder) placeholder.remove();
+                card = document.createElement('div');
+                card.id = cardId; card.className = 'data-card';
+                container.appendChild(card);
+            }
+            card.innerHTML = `<div class="card-header">${key.replace('_', ' ')}</div><div class="card-value">${val}<span class="card-unit">${units[key] || ''}</span></div>`;
+        }
+
+        function connectToMqtt(id) {
+            const client = mqtt.connect(`${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/mqtt`);
+            client.on('connect', () => client.subscribe(`devices/${id}/data`));
+            client.on('message', (t, m) => {
+                try {
+                    const data = JSON.parse(m.toString());
+                    Object.keys(data).forEach(k => {
+                        if (k === 'timestamp' || k === 'device_id') return;
+                        updateOrCreateCard(k, data[k]);
+                        if (!discoveredKeys.has(k)) {
+                            discoveredKeys.add(k);
+                            const opt = document.createElement('option');
+                            opt.value = k; opt.textContent = k.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+                            const sel = document.getElementById('variable-select');
+                            if (sel.options[0]?.value === "") sel.remove(0);
+                            sel.appendChild(opt);
+                        }
+                    });
+                    if (currentGranularity === 'realtime') handleNewRealtimeData(data);
+                } catch (e) { console.error(e); }
+            });
+        }
+
+        function initChart() {
+            const ctx = document.getElementById('history-chart').getContext('2d');
+            historyChart = new Chart(ctx, {
+                type: 'line',
+                data: { labels: chartData.labels, datasets: [{ label: 'Aguardando seleção...', data: [], borderColor: "#005f73", fill: true, tension: 0.3 }] },
+                options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: false } } }
+            });
+        }
+
+        function handleNewRealtimeData(data) {
+            const now = new Date().toLocaleTimeString('pt-BR');
+            chartData.labels.push(now);
+            discoveredKeys.forEach(k => {
+                if (!chartData[k]) chartData[k] = [];
+                chartData[k].push(data[k] || null);
+                if (chartData[k].length > maxDataPoints) chartData[k].shift();
+            });
+            if (chartData.labels.length > maxDataPoints) chartData.labels.shift();
+            updateChartDisplay();
+        }
+
+        function updateChartDisplay() {
+            if (currentGranularity !== 'realtime') return;
+            const v = document.getElementById('variable-select').value;
+            if (!v || !chartData[v]) return;
+            historyChart.data.labels = chartData.labels;
+            historyChart.data.datasets = [{ label: `${v.toUpperCase()} (Tempo Real)`, data: chartData[v], borderColor: "#005f73", backgroundColor: "rgba(0, 95, 115, 0.1)", fill: true, tension: 0.3 }];
+            historyChart.update('none');
+        }
+
+        function handleFilterClick() {
+            if (currentGranularity === 'realtime') {
+                alert("Selecione uma granularidade (Minutal, Horário ou Diário) para aplicar filtros de data.");
+                return;
+            }
+            fetchHistoricalData(currentGranularity);
+        }
+
+        async function fetchHistoricalData(type) {
+            const v = document.getElementById('variable-select').value;
+            const s = document.getElementById('start-date').value;
+            const e = document.getElementById('end-date').value;
+            if (!v) return alert("Selecione uma variável");
+
+            try {
+                const res = await fetch(`/api/history/${deviceId}?type=${type}&variable=${v}&start=${s}&end=${e}`);
+                const data = await res.json();
+                if (!data.labels || data.labels.length === 0) return alert("Nenhum dado encontrado para o período.");
+
+                const labels = data.labels.map(l => type === 'daily' ? new Date(l).toLocaleDateString('pt-BR') : l);
+                historyChart.data.labels = labels;
+                historyChart.data.datasets = [
+                    { label: `Média ${v}`, data: data.avg, borderColor: '#005f73', fill: false, tension: 0.1 },
+                    { label: `Máxima`, data: data.max, borderColor: '#ae2012', borderDash: [5, 5], fill: false },
+                    { label: `Mínima`, data: data.min, borderColor: '#4895ef', borderDash: [5, 5], fill: false }
+                ];
+                historyChart.update();
+            } catch (err) { alert("Erro ao carregar dados"); }
+        }
+
+        function resetToRealtimeChart() {
+            chartData.labels = [];
+            discoveredKeys.forEach(k => chartData[k] = []);
+            historyChart.data.labels = [];
+            historyChart.data.datasets = [{ label: 'Aguardando dados live...', data: [], borderColor: "#005f73", fill: true }];
+            historyChart.update();
+        }
+
+        function clearFilters() {
+            document.getElementById('start-date').value = "";
+            document.getElementById('end-date').value = "";
+            document.getElementById('granularity-select').value = "realtime";
+            currentGranularity = 'realtime';
+            resetToRealtimeChart();
+        }
+    </script>
+</body>
+</html>

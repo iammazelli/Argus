@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard - Plataforma IoT</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+    <style>
+        /* Estilos gerais */
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background-color: #f4f7f6;
+            color: #333;
+        }
+
+        header {
+            background-color: #005f73;
+            color: white;
+            padding: 1rem 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            margin: 0;
+        }
+
+        .btn-novo-dispositivo {
+            padding: 0.5rem 1rem;
+            background: white;
+            color: #005f73;
+            border: none;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 0.95rem;
+        }
+        .btn-novo-dispositivo:hover {
+            background: #e0f4f0;
+        }
+
+        main {
+            padding: 2rem;
+        }
+
+        .device-grid-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 1.5rem;
+        }
+
+        .device-card {
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.1);
+            padding: 1.5rem;
+            transition: transform 0.2s ease-in-out;
+            cursor: pointer;
+        }
+
+        .device-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .device-card h2 {
+            margin-top: 0;
+            color: #005f73;
+        }
+
+        .device-card p {
+            color: #555;
+            font-size: 0.9rem;
+            line-height: 1.4;
+        }
+
+        /* Modal e Wizard */
+        .wizard-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0,0,0,0.5);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            padding: 1rem;
+        }
+        .wizard-overlay.active {
+            display: flex;
+        }
+        .wizard-modal {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+            max-width: 560px;
+            width: 100%;
+            max-height: 90vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        .wizard-header {
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid #eee;
+            background: #005f73;
+            color: white;
+        }
+        .wizard-header h2 { margin: 0; font-size: 1.25rem; }
+        .wizard-stepper {
+            display: flex;
+            gap: 0.25rem;
+            padding: 0.75rem 1.5rem;
+            background: #f0f4f4;
+            flex-wrap: wrap;
+        }
+        .wizard-step-dot {
+            width: 28px;
+            height: 28px;
+            border-radius: 50%;
+            background: #ccc;
+            color: #666;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8rem;
+            font-weight: bold;
+        }
+        .wizard-step-dot.done { background: #0a9; color: white; }
+        .wizard-step-dot.current { background: #005f73; color: white; }
+        .wizard-body {
+            padding: 1.5rem;
+            overflow-y: auto;
+            flex: 1;
+        }
+        .wizard-step-panel {
+            display: none;
+        }
+        .wizard-step-panel.active {
+            display: block;
+        }
+        .wizard-footer {
+            padding: 1rem 1.5rem;
+            border-top: 1px solid #eee;
+            display: flex;
+            justify-content: space-between;
+            gap: 0.5rem;
+        }
+        .wizard-footer .btn { padding: 0.5rem 1rem; border-radius: 6px; font-weight: bold; cursor: pointer; border: none; }
+        .wizard-footer .btn-primary { background: #005f73; color: white; }
+        .wizard-footer .btn-primary:hover { background: #003440; }
+        .wizard-footer .btn-secondary { background: #e0e0e0; color: #333; }
+        .wizard-footer .btn-secondary:hover { background: #ccc; }
+        .wizard-footer .btn-secondary.invisible { visibility: hidden; }
+
+        .form-group { margin-bottom: 1rem; }
+        .form-group label { display: block; margin-bottom: 0.35rem; font-weight: bold; color: #444; }
+        .form-group input, .form-group select, .form-group textarea {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ccc;
+            border-radius: 6px;
+            box-sizing: border-box;
+        }
+        #wizard-map { height: 280px; border-radius: 8px; border: 1px solid #ddd; }
+
+        .variable-row, .alert-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 0.5rem;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        .variable-row input, .alert-row input, .alert-row select {
+            padding: 0.4rem;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .variable-row input[type="text"]:first-of-type { flex: 1; min-width: 120px; }
+        .alert-row input[type="email"], .alert-row input[type="text"] { flex: 1; min-width: 80px; }
+        .btn-remove { background: #c44; color: white; border: none; padding: 0.35rem 0.6rem; border-radius: 4px; cursor: pointer; font-size: 0.85rem; }
+        .btn-remove:hover { background: #a22; }
+        .btn-add { background: #005f73; color: white; border: none; padding: 0.4rem 0.8rem; border-radius: 4px; cursor: pointer; margin-top: 0.25rem; font-size: 0.9rem; }
+        .btn-add:hover { background: #003440; }
+
+        .summary-block { background: #f5f5f5; padding: 1rem; border-radius: 8px; margin-bottom: 1rem; }
+        .summary-block h4 { margin: 0 0 0.5rem 0; color: #005f73; }
+        .code-choice { display: flex; gap: 1rem; margin: 1rem 0; }
+        .code-choice label { display: flex; align-items: center; gap: 0.5rem; cursor: pointer; }
+        .code-choice input { width: auto; }
+    </style>
+</head>
+<body>
+    <header>
+        <h1>Meus Dispositivos</h1>
+        <button type="button" class="btn-novo-dispositivo" id="btn-novo-dispositivo">Novo dispositivo</button>
+    </header>
+    <main>
+        <div id="device-grid" class="device-grid-container"></div>
+    </main>
+
+    <!-- Modal do Wizard -->
+    <div class="wizard-overlay" id="wizard-overlay">
+        <div class="wizard-modal">
+            <div class="wizard-header">
+                <h2>Novo dispositivo</h2>
+            </div>
+            <div class="wizard-stepper" id="wizard-stepper"></div>
+            <div class="wizard-body">
+                <!-- Etapa 1: Apelido -->
+                <div class="wizard-step-panel active" data-step="1">
+                    <div class="form-group">
+                        <label for="wizard-name">Apelido do dispositivo *</label>
+                        <input type="text" id="wizard-name" placeholder="Ex: Sensor da sala">
+                    </div>
+                    <div class="form-group">
+                        <label for="wizard-device-id">ID do dispositivo (opcional)</label>
+                        <input type="text" id="wizard-device-id" placeholder="Deixe em branco para gerar automaticamente">
+                    </div>
+                </div>
+                <!-- Etapa 2: Localização -->
+                <div class="wizard-step-panel" data-step="2">
+                    <div class="form-group">
+                        <label>Clique no mapa para definir a localização</label>
+                        <div id="wizard-map"></div>
+                    </div>
+                    <div class="form-group">
+                        <label for="wizard-location-text">Endereço ou descrição (opcional)</label>
+                        <input type="text" id="wizard-location-text" placeholder="Ex: Av. Brasil, 1000">
+                    </div>
+                    <div class="form-group">
+                        <small id="wizard-coords-display">Lat/Lng: —</small>
+                    </div>
+                </div>
+                <!-- Etapa 3: Variáveis -->
+                <div class="wizard-step-panel" data-step="3">
+                    <p>Defina as variáveis que o dispositivo enviará no JSON.</p>
+                    <div id="wizard-variables-list"></div>
+                    <button type="button" class="btn-add" id="wizard-add-variable">+ Adicionar variável</button>
+                </div>
+                <!-- Etapa 4: Alertas -->
+                <div class="wizard-step-panel" data-step="4">
+                    <div class="form-group">
+                        <label for="wizard-alert-email">Email para alertas *</label>
+                        <input type="email" id="wizard-alert-email" placeholder="seu@email.com">
+                    </div>
+                    <div class="form-group">
+                        <label>Triggers (condições para enviar alerta)</label>
+                        <div id="wizard-alerts-list"></div>
+                        <button type="button" class="btn-add" id="wizard-add-alert">+ Adicionar trigger</button>
+                    </div>
+                    <div class="form-group">
+                        <label for="wizard-alert-message">Mensagem do alerta</label>
+                        <textarea id="wizard-alert-message" rows="2" placeholder="Ex: Temperatura acima do limite!"></textarea>
+                    </div>
+                </div>
+                <!-- Etapa 5: Frequência -->
+                <div class="wizard-step-panel" data-step="5">
+                    <div class="form-group">
+                        <label for="wizard-frequency">Frequência de escrita no banco</label>
+                        <select id="wizard-frequency">
+                            <option value="300">5 minutos</option>
+                            <option value="600">10 minutos</option>
+                            <option value="1800">30 minutos</option>
+                            <option value="3600">1 hora</option>
+                            <option value="86400">24 horas</option>
+                        </select>
+                    </div>
+                </div>
+                <!-- Etapa 6: Resumo e código -->
+                <div class="wizard-step-panel" data-step="6">
+                    <div id="wizard-summary"></div>
+                    <div class="form-group">
+                        <label>Linguagem do código</label>
+                        <div class="code-choice">
+                            <label><input type="radio" name="wizard-lang" value="cpp" checked> C++ (Arduino / ESP)</label>
+                            <label><input type="radio" name="wizard-lang" value="micropython"> MicroPython</label>
+                        </div>
+                    </div>
+                    <div class="wizard-footer" style="border: none; padding-left: 0; padding-right: 0;">
+                        <button type="button" class="btn btn-primary" id="wizard-download-code">Gerar e baixar código</button>
+                    </div>
+                </div>
+            </div>
+            <div class="wizard-footer" id="wizard-footer">
+                <button type="button" class="btn btn-secondary" id="wizard-prev">Voltar</button>
+                <button type="button" class="btn btn-primary" id="wizard-next">Próximo</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const deviceGrid = document.getElementById('device-grid');
+            const TOTAL_STEPS = 6;
+
+            // Estado do wizard
+            const wizardState = {
+                currentStep: 1,
+                name: '',
+                deviceIdStr: '',
+                lat: null,
+                lng: null,
+                locationText: '',
+                variables: [],
+                alertEmail: '',
+                alerts: [],
+                alertMessage: '',
+                frequencySeconds: 300,
+                createdDeviceId: null
+            };
+
+            let wizardMap = null;
+            let wizardMarker = null;
+
+            function handleCardClick(event) {
+                const card = event.target.closest('.device-card');
+                if (card) {
+                    const deviceId = card.dataset.deviceId;
+                    window.location.href = `/device_page.html?deviceId=${deviceId}`;
+                }
+            }
+
+            deviceGrid.addEventListener('click', handleCardClick);
+
+            async function fetchDevices() {
+                try {
+                    const response = await fetch('/api/devices');
+                    if (!response.ok) throw new Error('Falha ao buscar dispositivos da API.');
+                    const devices = await response.json();
+                    renderDevices(devices);
+                } catch (error) {
+                    console.error('Erro:', error);
+                    deviceGrid.innerHTML = '<p>Não foi possível carregar os dispositivos.</p>';
+                }
+            }
+
+            function renderDevices(devices) {
+                deviceGrid.innerHTML = '';
+                if (devices.length === 0) {
+                    deviceGrid.innerHTML = '<p>Nenhum dispositivo registrado ainda.</p>';
+                    return;
+                }
+                devices.forEach(device => {
+                    const card = document.createElement('div');
+                    card.className = 'device-card';
+                    card.dataset.deviceId = device.device_id_str;
+                    card.innerHTML = `
+                        <h2>${device.name || 'Dispositivo sem nome'}</h2>
+                        <p>${device.description || 'Nenhuma descrição fornecida.'}</p>
+                    `;
+                    deviceGrid.appendChild(card);
+                });
+            }
+
+            // --- Wizard: abrir/fechar ---
+            document.getElementById('btn-novo-dispositivo').addEventListener('click', () => {
+                wizardState.currentStep = 1;
+                wizardState.name = '';
+                wizardState.deviceIdStr = '';
+                wizardState.lat = null;
+                wizardState.lng = null;
+                wizardState.locationText = '';
+                wizardState.variables = [{ name: 'temperature', type: 'number' }];
+                wizardState.alertEmail = '';
+                wizardState.alerts = [{ variable: '', operator: '>', value: '' }];
+                wizardState.alertMessage = '';
+                wizardState.frequencySeconds = 300;
+                wizardState.createdDeviceId = null;
+                document.getElementById('wizard-name').value = '';
+                document.getElementById('wizard-device-id').value = '';
+                document.getElementById('wizard-location-text').value = '';
+                document.getElementById('wizard-alert-email').value = '';
+                document.getElementById('wizard-alert-message').value = 'Temperatura acima do limite!';
+                document.getElementById('wizard-frequency').value = '300';
+                document.querySelector('input[name="wizard-lang"][value="cpp"]').checked = true;
+                renderVariablesList();
+                renderAlertsList();
+                goToStep(1);
+                initMapIfNeeded();
+                document.getElementById('wizard-overlay').classList.add('active');
+            });
+
+            function closeWizard() {
+                document.getElementById('wizard-overlay').classList.remove('active');
+                fetchDevices();
+            }
+
+            // --- Stepper e navegação ---
+            function renderStepper() {
+                const stepper = document.getElementById('wizard-stepper');
+                stepper.innerHTML = '';
+                for (let i = 1; i <= TOTAL_STEPS; i++) {
+                    const dot = document.createElement('div');
+                    dot.className = 'wizard-step-dot' + (i < wizardState.currentStep ? ' done' : '') + (i === wizardState.currentStep ? ' current' : '');
+                    dot.textContent = i;
+                    stepper.appendChild(dot);
+                }
+            }
+
+            function goToStep(step) {
+                wizardState.currentStep = step;
+                document.querySelectorAll('.wizard-step-panel').forEach(p => p.classList.remove('active'));
+                const panel = document.querySelector(`.wizard-step-panel[data-step="${step}"]`);
+                if (panel) panel.classList.add('active');
+                renderStepper();
+                const footer = document.getElementById('wizard-footer');
+                footer.querySelector('#wizard-prev').classList.toggle('invisible', step === 1);
+                if (step === TOTAL_STEPS) {
+                    footer.style.display = 'none';
+                    buildSummary();
+                } else {
+                    footer.style.display = 'flex';
+                    footer.querySelector('#wizard-next').textContent = step === TOTAL_STEPS - 1 ? 'Concluir' : 'Próximo';
+                }
+            }
+
+            function validateStep(step) {
+                if (step === 1) {
+                    const name = document.getElementById('wizard-name').value.trim();
+                    if (!name) {
+                        alert('Informe o apelido do dispositivo.');
+                        return false;
+                    }
+                    wizardState.name = name;
+                    wizardState.deviceIdStr = document.getElementById('wizard-device-id').value.trim();
+                    if (!wizardState.deviceIdStr) {
+                        wizardState.deviceIdStr = 'device_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
+                    }
+                    return true;
+                }
+                if (step === 4) {
+                    wizardState.alertEmail = document.getElementById('wizard-alert-email').value.trim();
+                    wizardState.alertMessage = document.getElementById('wizard-alert-message').value.trim();
+                    const hasAlert = wizardState.alerts.some(a => a.variable && a.value !== '');
+                    if (hasAlert && !wizardState.alertEmail) {
+                        alert('Informe o email para alertas.');
+                        return false;
+                    }
+                    return true;
+                }
+                return true;
+            }
+
+            document.getElementById('wizard-next').addEventListener('click', () => {
+                if (!validateStep(wizardState.currentStep)) return;
+                if (wizardState.currentStep === 5) {
+                    wizardState.frequencySeconds = parseInt(document.getElementById('wizard-frequency').value, 10);
+                    wizardState.locationText = document.getElementById('wizard-location-text').value;
+                }
+                if (wizardState.currentStep < TOTAL_STEPS) goToStep(wizardState.currentStep + 1);
+            });
+
+            document.getElementById('wizard-prev').addEventListener('click', () => {
+                if (wizardState.currentStep > 1) goToStep(wizardState.currentStep - 1);
+            });
+
+            // --- Etapa 2: Mapa ---
+            function initMapIfNeeded() {
+                if (wizardMap) {
+                    wizardMap.remove();
+                    wizardMap = null;
+                    wizardMarker = null;
+                }
+                const mapEl = document.getElementById('wizard-map');
+                if (!mapEl || !mapEl.offsetParent) return;
+                wizardMap = L.map('wizard-map').setView([-15.77972, -47.92972], 4);
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(wizardMap);
+                setTimeout(() => wizardMap.invalidateSize(), 150);
+                wizardMap.on('click', (e) => {
+                    wizardState.lat = e.latlng.lat;
+                    wizardState.lng = e.latlng.lng;
+                    if (wizardMarker) wizardMarker.setLatLng(e.latlng);
+                    else wizardMarker = L.marker(e.latlng).addTo(wizardMap);
+                    document.getElementById('wizard-coords-display').textContent = 'Lat/Lng: ' + wizardState.lat.toFixed(5) + ', ' + wizardState.lng.toFixed(5);
+                });
+                if (wizardState.lat != null && wizardState.lng != null) {
+                    wizardMarker = L.marker([wizardState.lat, wizardState.lng]).addTo(wizardMap);
+                    wizardMap.setView([wizardState.lat, wizardState.lng], 15);
+                }
+                document.getElementById('wizard-location-text').value = wizardState.locationText;
+                document.getElementById('wizard-coords-display').textContent = wizardState.lat != null
+                    ? 'Lat/Lng: ' + wizardState.lat.toFixed(5) + ', ' + wizardState.lng.toFixed(5) : 'Lat/Lng: —';
+            }
+
+            document.querySelector('.wizard-step-panel[data-step="2"]').addEventListener('transitionend', () => initMapIfNeeded());
+            const obs = new MutationObserver(() => {
+                const panel = document.querySelector('.wizard-step-panel[data-step="2"]');
+                if (panel && panel.classList.contains('active')) setTimeout(initMapIfNeeded, 100);
+            });
+            obs.observe(document.querySelector('.wizard-body'), { attributes: true, subtree: true, attributeFilter: ['class'] });
+
+            document.getElementById('wizard-location-text').addEventListener('change', function() {
+                wizardState.locationText = this.value;
+            });
+
+            // --- Etapa 3: Variáveis ---
+            function renderVariablesList() {
+                const list = document.getElementById('wizard-variables-list');
+                list.innerHTML = '';
+                wizardState.variables.forEach((v, i) => {
+                    const row = document.createElement('div');
+                    row.className = 'variable-row';
+                    row.innerHTML = `
+                        <input type="text" placeholder="Nome (ex: temperature)" value="${v.name || ''}" data-variable-name>
+                        <select data-variable-type>
+                            <option value="number" ${v.type === 'number' ? 'selected' : ''}>Número</option>
+                            <option value="string" ${v.type === 'string' ? 'selected' : ''}>Texto</option>
+                            <option value="boolean" ${v.type === 'boolean' ? 'selected' : ''}>Booleano</option>
+                        </select>
+                        <button type="button" class="btn-remove" data-remove-variable data-index="${i}">Remover</button>
+                    `;
+                    list.appendChild(row);
+                });
+                list.querySelectorAll('[data-remove-variable]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        wizardState.variables.splice(parseInt(btn.dataset.index, 10), 1);
+                        if (wizardState.variables.length === 0) wizardState.variables.push({ name: '', type: 'number' });
+                        renderVariablesList();
+                    });
+                });
+                list.querySelectorAll('[data-variable-name]').forEach((inp, i) => {
+                    inp.addEventListener('input', () => { wizardState.variables[i].name = inp.value; });
+                });
+                list.querySelectorAll('[data-variable-type]').forEach((sel, i) => {
+                    sel.addEventListener('change', () => { wizardState.variables[i].type = sel.value; });
+                });
+            }
+
+            document.getElementById('wizard-add-variable').addEventListener('click', () => {
+                wizardState.variables.push({ name: '', type: 'number' });
+                renderVariablesList();
+            });
+
+            // --- Etapa 4: Alertas ---
+            function renderAlertsList() {
+                const list = document.getElementById('wizard-alerts-list');
+                list.innerHTML = '';
+                const ops = ['>', '<', '>=', '<=', '==', '!='];
+                wizardState.alerts.forEach((a, i) => {
+                    const row = document.createElement('div');
+                    row.className = 'alert-row';
+                    row.innerHTML = `
+                        <input type="text" placeholder="Variável" value="${a.variable || ''}" data-alert-variable>
+                        <select data-alert-operator>${ops.map(o => '<option value="' + o + '"' + (a.operator === o ? ' selected' : '') + '>' + o + '</option>').join('')}</select>
+                        <input type="text" placeholder="Valor" value="${a.value || ''}" data-alert-value>
+                        <button type="button" class="btn-remove" data-remove-alert data-index="${i}">Remover</button>
+                    `;
+                    list.appendChild(row);
+                });
+                list.querySelectorAll('[data-remove-alert]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        wizardState.alerts.splice(parseInt(btn.dataset.index, 10), 1);
+                        if (wizardState.alerts.length === 0) wizardState.alerts.push({ variable: '', operator: '>', value: '' });
+                        renderAlertsList();
+                    });
+                });
+                list.querySelectorAll('[data-alert-variable]').forEach((inp, i) => {
+                    inp.addEventListener('input', () => { wizardState.alerts[i].variable = inp.value; });
+                });
+                list.querySelectorAll('[data-alert-operator]').forEach((sel, i) => {
+                    sel.addEventListener('change', () => { wizardState.alerts[i].operator = sel.value; });
+                });
+                list.querySelectorAll('[data-alert-value]').forEach((inp, i) => {
+                    inp.addEventListener('input', () => { wizardState.alerts[i].value = inp.value; });
+                });
+            }
+
+            document.getElementById('wizard-add-alert').addEventListener('click', () => {
+                wizardState.alerts.push({ variable: '', operator: '>', value: '' });
+                renderAlertsList();
+            });
+
+            // Sincronizar estado ao sair da etapa 4
+            document.querySelector('.wizard-step-panel[data-step="4"]').querySelectorAll('input, textarea').forEach(el => {
+                el.addEventListener('change', () => {
+                    wizardState.alertEmail = document.getElementById('wizard-alert-email').value;
+                    wizardState.alertMessage = document.getElementById('wizard-alert-message').value;
+                });
+            });
+
+            // Etapa 5: frequência (já no state ao escolher)
+            document.getElementById('wizard-frequency').addEventListener('change', function() {
+                wizardState.frequencySeconds = parseInt(this.value, 10);
+            });
+
+            // --- Etapa 6: Resumo ---
+            function buildSummary() {
+                const vars = wizardState.variables.filter(v => v.name).map(v => v.name + ' (' + v.type + ')').join(', ') || '—';
+                const loc = wizardState.lat != null ? wizardState.lat.toFixed(4) + ', ' + wizardState.lng.toFixed(4) : '—';
+                const freqLabels = { 300: '5 min', 600: '10 min', 1800: '30 min', 3600: '1 h', 86400: '24 h' };
+                const alertsText = wizardState.alerts.filter(a => a.variable && a.value !== '').length
+                    ? wizardState.alerts.map(a => a.variable + ' ' + a.operator + ' ' + a.value).join('; ')
+                    : 'Nenhum';
+                document.getElementById('wizard-summary').innerHTML = `
+                    <div class="summary-block"><h4>Apelido</h4>${wizardState.name}</div>
+                    <div class="summary-block"><h4>ID</h4>${wizardState.deviceIdStr}</div>
+                    <div class="summary-block"><h4>Localização</h4>${loc} ${wizardState.locationText ? ' — ' + wizardState.locationText : ''}</div>
+                    <div class="summary-block"><h4>Variáveis</h4>${vars}</div>
+                    <div class="summary-block"><h4>Email alertas</h4>${wizardState.alertEmail || '—'}</div>
+                    <div class="summary-block"><h4>Triggers</h4>${alertsText}</div>
+                    <div class="summary-block"><h4>Frequência</h4>${freqLabels[wizardState.frequencySeconds] || wizardState.frequencySeconds + ' s'}</div>
+                `;
+            }
+
+            // --- API e download ---
+            async function ensureDeviceCreated() {
+                if (wizardState.createdDeviceId) return wizardState.createdDeviceId;
+                const name = wizardState.name;
+                const deviceIdStr = wizardState.deviceIdStr;
+                const location = wizardState.locationText || (wizardState.lat != null ? wizardState.lat + ',' + wizardState.lng : null);
+                try {
+                    const res = await fetch('/api/devices', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            name,
+                            device_id_str: deviceIdStr,
+                            description: '',
+                            location,
+                            lat: wizardState.lat,
+                            lng: wizardState.lng
+                        })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        wizardState.createdDeviceId = data.device_id_str || deviceIdStr;
+                    } else {
+                        wizardState.createdDeviceId = deviceIdStr;
+                    }
+                } catch (e) {
+                    wizardState.createdDeviceId = deviceIdStr;
+                }
+                return wizardState.createdDeviceId;
+            }
+
+            async function submitAlerts(deviceIdStr) {
+                const alerts = wizardState.alerts.filter(a => a.variable && a.value !== '').map(a => ({
+                    email: wizardState.alertEmail,
+                    trigger_variable: a.variable,
+                    trigger_operator: a.operator,
+                    trigger_value: a.value,
+                    message: wizardState.alertMessage
+                }));
+                if (alerts.length === 0) return;
+                try {
+                    await fetch('/api/devices/' + encodeURIComponent(deviceIdStr) + '/alerts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ alerts })
+                    });
+                } catch (e) {
+                    console.warn('Alertas não salvos (API pode não existir ainda):', e);
+                }
+            }
+
+            function getMqttConfig() {
+                return { brokerUrl: 'mqtt://SEU_BROKER:1883', host: 'SEU_BROKER', port: 1883 };
+            }
+
+            async function getBrokerForCode() {
+                try {
+                    const res = await fetch('/api/config/mqtt');
+                    if (res.ok) {
+                        const c = await res.json();
+                        return { brokerUrl: c.brokerUrl || ('mqtt://' + (c.host || 'SEU_BROKER') + ':' + (c.port || 1883)), host: c.host || 'SEU_BROKER', port: c.port || 1883 };
+                    }
+                } catch (e) {}
+                return getMqttConfig();
+            }
+
+            function generateCppCode(deviceId, broker, intervalSec, variables) {
+                const varsList = variables.filter(v => v.name).map(v => v.name);
+                const defaultValue = (v) => v.type === 'number' ? '0' : v.type === 'boolean' ? 'false' : '""';
+                const docLines = variables.filter(v => v.name).map(v => 'doc["' + v.name + '"] = ' + defaultValue(v) + '; // Substitua pela leitura do sensor').join('\n    ');
+                return `// Plataforma IoT - Dispositivo: ${wizardState.name}
+// ID: ${deviceId} | Broker: ${broker.brokerUrl} | Intervalo: ${intervalSec}s
+// Variáveis: ${varsList.join(', ')}
+
+#include <ESP8266WiFi.h>
+#include <PubSubClient.h>
+#include <ArduinoJson.h>
+
+const char* ssid = "SUA_REDE_WIFI";
+const char* password = "SUA_SENHA_WIFI";
+const char* mqtt_server = "${(broker.host || 'SEU_BROKER').replace(/"/g, '')}";
+const int mqtt_port = ${broker.port || 1883};
+const char* device_id = "${deviceId}";
+const char* topic = "devices/${deviceId}/data";
+const long interval_ms = ${intervalSec * 1000}L;
+
+WiFiClient espClient;
+PubSubClient client(espClient);
+
+void setup_wifi() {
+  delay(10);
+  WiFi.begin(ssid, password);
+  while (WiFi.status() != WL_CONNECTED) { delay(500); }
+}
+
+void reconnect() {
+  while (!client.connected()) {
+    if (client.connect(device_id)) { break; }
+    delay(5000);
+  }
+}
+
+void setup() {
+  Serial.begin(115200);
+  setup_wifi();
+  client.setServer(mqtt_server, mqtt_port);
+}
+
+void loop() {
+  if (!client.connected()) reconnect();
+  client.loop();
+
+  static unsigned long lastSend = 0;
+  if (millis() - lastSend >= interval_ms) {
+    lastSend = millis();
+    DynamicJsonDocument doc(256);
+    ${docLines}
+    char buf[256];
+    serializeJson(doc, buf);
+    client.publish(topic, buf);
+  }
+  delay(100);
+}
+`;
+            }
+
+            function generateMicroPythonCode(deviceId, broker, intervalSec, variables) {
+                const varsList = variables.filter(v => v.name);
+                const payloadEntries = varsList.map(v => {
+                    const val = v.type === 'number' ? '0' : v.type === 'boolean' ? 'False' : '""';
+                    return '"' + v.name + '": ' + val;
+                }).join(', ');
+                return `# Plataforma IoT - Dispositivo: ${wizardState.name}
+# ID: ${deviceId} | Broker: ${broker.brokerUrl} | Intervalo: ${intervalSec}s
+# Variáveis: ${varsList.map(v => v.name).join(', ')}
+
+import network
+import time
+from umqtt.simple import MQTTClient
+import ujson
+
+WIFI_SSID = "SUA_REDE_WIFI"
+WIFI_PASS = "SUA_SENHA_WIFI"
+MQTT_HOST = "${(broker.host || 'SEU_BROKER').replace(/"/g, '')}"
+MQTT_PORT = ${broker.port || 1883}
+DEVICE_ID = "${deviceId}"
+TOPIC = "devices/" + DEVICE_ID + "/data"
+INTERVAL_SEC = ${intervalSec}
+
+def connect_wifi():
+    sta = network.WLAN(network.STA_IF)
+    sta.active(True)
+    sta.connect(WIFI_SSID, WIFI_PASS)
+    while not sta.isconnected():
+        time.sleep(0.5)
+    return True
+
+def main():
+    connect_wifi()
+    c = MQTTClient(DEVICE_ID, MQTT_HOST, port=MQTT_PORT)
+    c.connect()
+    while True:
+        payload = {${payloadEntries}}  # Substitua pelas leituras dos sensores
+        c.publish(TOPIC, ujson.dumps(payload))
+        time.sleep(INTERVAL_SEC)
+
+if __name__ == "__main__":
+    main()
+`;
+            }
+
+            document.getElementById('wizard-download-code').addEventListener('click', async () => {
+                const deviceId = wizardState.createdDeviceId || wizardState.deviceIdStr;
+                await ensureDeviceCreated();
+                await submitAlerts(deviceId);
+                const broker = await getBrokerForCode();
+                const intervalSec = wizardState.frequencySeconds;
+                const variables = wizardState.variables;
+                const lang = document.querySelector('input[name="wizard-lang"]:checked').value;
+                const isCpp = lang === 'cpp';
+                const code = isCpp
+                    ? generateCppCode(deviceId, broker, intervalSec, variables)
+                    : generateMicroPythonCode(deviceId, broker, intervalSec, variables);
+                const filename = isCpp ? 'device_' + deviceId + '.ino' : 'device_' + deviceId + '.py';
+                const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
+                const a = document.createElement('a');
+                a.href = URL.createObjectURL(blob);
+                a.download = filename;
+                a.click();
+                URL.revokeObjectURL(a.href);
+                closeWizard();
+                if (wizardState.createdDeviceId) {
+                    window.location.href = '/device_page.html?deviceId=' + encodeURIComponent(deviceId);
+                }
+            });
+
+            fetchDevices();
+        });
+    </script>
+</body>
+</html>
