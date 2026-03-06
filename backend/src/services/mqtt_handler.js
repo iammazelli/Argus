@@ -1,10 +1,11 @@
 const mqtt = require('mqtt');
 const { mqtt: mqttConfig } = require('../config');
-const { insertSensorData} = require('./db_service');
+const { insertSensorData, getRegistrationByToken } = require('./db_service');
 
 const connect  = () => {
     /**
-     * Inicia a conexão com o Broker mqtt e configura os listeners de eventos
+     * Inicia a conexão com o Broker mqtt e configura os listeners de eventos.
+     * Só aceita dados de dispositivos que possuem token de registro válido (broker_key no payload).
      */
     const client = mqtt.connect(mqttConfig.brokerUrl);
 
@@ -22,19 +23,36 @@ const connect  = () => {
         }); 
     });
 
-    //Evento disparado quando uma mensagem chega num tópico inscrito
-    client.on('message', (topic, message) => {
+    // Evento disparado quando uma mensagem chega num tópico inscrito
+    client.on('message', async (topic, message) => {
         try {
-            const deviceIdStr = topic.split('/')[1]; // Extraindo id do dispositivo (segunda parte o tópico)
-            const data = JSON.parse(message.toString()); // Mensagem chega como um buffer, então convertemos para string e depois para JSON
-
+            const deviceIdStr = topic.split('/')[1];
+            const raw = JSON.parse(message.toString());
+            const brokerKey = raw.broker_key;
+            if (!brokerKey || typeof brokerKey !== 'string') {
+                console.warn(`[MQTT] Mensagem rejeitada (sem broker_key válido) do dispositivo ${deviceIdStr}`);
+                return;
+            }
+            const registration = await getRegistrationByToken(brokerKey);
+            if (!registration) {
+                console.warn(`[MQTT] Mensagem rejeitada (token inválido) do dispositivo ${deviceIdStr}`);
+                return;
+            }
+            if (registration.device_id_str !== deviceIdStr) {
+                console.warn(`[MQTT] Mensagem rejeitada (device_id do tópico não confere com o token) do dispositivo ${deviceIdStr}`);
+                return;
+            }
+            const { broker_key, ...data } = raw;
             console.log(`[MQTT] Mensagem recebida do dispositivo ${deviceIdStr}:`, data);
-
-            insertSensorData(deviceIdStr, data);
+            insertSensorData(deviceIdStr, data, {
+                name: registration.name,
+                description: registration.description,
+                location: registration.location,
+                lat: registration.lat,
+                lng: registration.lng
+            });
         } catch (error) {
-            // Parsing falha se a mensagem não for um JSON válido
-            // Capturamos o erro para que a aplicação não pare de funcionar
-            console.error(`[MQTT] Erro ao processar mensagem do tópico ${topic}:`, error)
+            console.error(`[MQTT] Erro ao processar mensagem do tópico ${topic}:`, error);
         }
     });
 

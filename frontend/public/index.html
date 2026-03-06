@@ -153,6 +153,19 @@
         .wizard-footer .btn-secondary { background: #e0e0e0; color: #333; }
         .wizard-footer .btn-secondary:hover { background: #ccc; }
         .wizard-footer .btn-secondary.invisible { visibility: hidden; }
+        .btn-wizard-cancel {
+            background: transparent;
+            border: 1px solid rgba(255,255,255,0.7);
+            color: white;
+            width: 32px;
+            height: 32px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 1.1rem;
+            line-height: 1;
+            padding: 0;
+        }
+        .btn-wizard-cancel:hover { background: rgba(255,255,255,0.2); }
 
         .form-group { margin-bottom: 1rem; }
         .form-group label { display: block; margin-bottom: 0.35rem; font-weight: bold; color: #444; }
@@ -203,8 +216,9 @@
     <!-- Modal do Wizard -->
     <div class="wizard-overlay" id="wizard-overlay">
         <div class="wizard-modal">
-            <div class="wizard-header">
+            <div class="wizard-header" style="display: flex; justify-content: space-between; align-items: center;">
                 <h2>Novo dispositivo</h2>
+                <button type="button" class="btn-wizard-cancel" id="wizard-btn-cancel" title="Cancelar">✕</button>
             </div>
             <div class="wizard-stepper" id="wizard-stepper"></div>
             <div class="wizard-body">
@@ -213,10 +227,6 @@
                     <div class="form-group">
                         <label for="wizard-name">Apelido do dispositivo *</label>
                         <input type="text" id="wizard-name" placeholder="Ex: Sensor da sala">
-                    </div>
-                    <div class="form-group">
-                        <label for="wizard-device-id">ID do dispositivo (opcional)</label>
-                        <input type="text" id="wizard-device-id" placeholder="Deixe em branco para gerar automaticamente">
                     </div>
                 </div>
                 <!-- Etapa 2: Localização -->
@@ -284,8 +294,11 @@
                 </div>
             </div>
             <div class="wizard-footer" id="wizard-footer">
-                <button type="button" class="btn btn-secondary" id="wizard-prev">Voltar</button>
-                <button type="button" class="btn btn-primary" id="wizard-next">Próximo</button>
+                <button type="button" class="btn btn-secondary" id="wizard-cancel">Cancelar</button>
+                <div style="display: flex; gap: 0.5rem;">
+                    <button type="button" class="btn btn-secondary" id="wizard-prev">Voltar</button>
+                    <button type="button" class="btn btn-primary" id="wizard-next">Próximo</button>
+                </div>
             </div>
         </div>
     </div>
@@ -301,6 +314,7 @@
                 currentStep: 1,
                 name: '',
                 deviceIdStr: '',
+                brokerToken: '',
                 lat: null,
                 lng: null,
                 locationText: '',
@@ -314,6 +328,7 @@
 
             let wizardMap = null;
             let wizardMarker = null;
+            let wizardMapInitTimeout = null;
 
             function handleCardClick(event) {
                 const card = event.target.closest('.device-card');
@@ -327,7 +342,7 @@
 
             async function fetchDevices() {
                 try {
-                    const response = await fetch('/api/devices');
+                    const response = await fetch('/api/devices?online=true');
                     if (!response.ok) throw new Error('Falha ao buscar dispositivos da API.');
                     const devices = await response.json();
                     renderDevices(devices);
@@ -340,7 +355,7 @@
             function renderDevices(devices) {
                 deviceGrid.innerHTML = '';
                 if (devices.length === 0) {
-                    deviceGrid.innerHTML = '<p>Nenhum dispositivo registrado ainda.</p>';
+                    deviceGrid.innerHTML = '<p>Nenhum dispositivo online no momento. Conecte um dispositivo para que ele apareça aqui.</p>';
                     return;
                 }
                 devices.forEach(device => {
@@ -360,6 +375,7 @@
                 wizardState.currentStep = 1;
                 wizardState.name = '';
                 wizardState.deviceIdStr = '';
+                wizardState.brokerToken = '';
                 wizardState.lat = null;
                 wizardState.lng = null;
                 wizardState.locationText = '';
@@ -370,7 +386,6 @@
                 wizardState.frequencySeconds = 300;
                 wizardState.createdDeviceId = null;
                 document.getElementById('wizard-name').value = '';
-                document.getElementById('wizard-device-id').value = '';
                 document.getElementById('wizard-location-text').value = '';
                 document.getElementById('wizard-alert-email').value = '';
                 document.getElementById('wizard-alert-message').value = 'Temperatura acima do limite!';
@@ -379,7 +394,6 @@
                 renderVariablesList();
                 renderAlertsList();
                 goToStep(1);
-                initMapIfNeeded();
                 document.getElementById('wizard-overlay').classList.add('active');
             });
 
@@ -387,6 +401,9 @@
                 document.getElementById('wizard-overlay').classList.remove('active');
                 fetchDevices();
             }
+
+            document.getElementById('wizard-btn-cancel').addEventListener('click', closeWizard);
+            document.getElementById('wizard-cancel').addEventListener('click', closeWizard);
 
             // --- Stepper e navegação ---
             function renderStepper() {
@@ -415,6 +432,10 @@
                     footer.style.display = 'flex';
                     footer.querySelector('#wizard-next').textContent = step === TOTAL_STEPS - 1 ? 'Concluir' : 'Próximo';
                 }
+                if (step === 2) {
+                    clearTimeout(wizardMapInitTimeout);
+                    wizardMapInitTimeout = setTimeout(initMapIfNeeded, 350);
+                }
             }
 
             function validateStep(step) {
@@ -425,10 +446,6 @@
                         return false;
                     }
                     wizardState.name = name;
-                    wizardState.deviceIdStr = document.getElementById('wizard-device-id').value.trim();
-                    if (!wizardState.deviceIdStr) {
-                        wizardState.deviceIdStr = 'device_' + Date.now() + '_' + Math.random().toString(36).slice(2, 8);
-                    }
                     return true;
                 }
                 if (step === 4) {
@@ -457,7 +474,7 @@
                 if (wizardState.currentStep > 1) goToStep(wizardState.currentStep - 1);
             });
 
-            // --- Etapa 2: Mapa ---
+            // --- Etapa 2: Mapa (inicializado só em goToStep(2) para evitar múltiplas chamadas) ---
             function initMapIfNeeded() {
                 if (wizardMap) {
                     wizardMap.remove();
@@ -466,9 +483,14 @@
                 }
                 const mapEl = document.getElementById('wizard-map');
                 if (!mapEl || !mapEl.offsetParent) return;
-                wizardMap = L.map('wizard-map').setView([-15.77972, -47.92972], 4);
+                wizardMap = L.map('wizard-map', { scrollWheelZoom: false }).setView([-15.77972, -47.92972], 4);
                 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '&copy; OpenStreetMap' }).addTo(wizardMap);
-                setTimeout(() => wizardMap.invalidateSize(), 150);
+                setTimeout(() => {
+                    if (wizardMap) wizardMap.invalidateSize();
+                }, 200);
+                setTimeout(() => {
+                    if (wizardMap) wizardMap.invalidateSize();
+                }, 500);
                 wizardMap.on('click', (e) => {
                     wizardState.lat = e.latlng.lat;
                     wizardState.lng = e.latlng.lng;
@@ -484,13 +506,6 @@
                 document.getElementById('wizard-coords-display').textContent = wizardState.lat != null
                     ? 'Lat/Lng: ' + wizardState.lat.toFixed(5) + ', ' + wizardState.lng.toFixed(5) : 'Lat/Lng: —';
             }
-
-            document.querySelector('.wizard-step-panel[data-step="2"]').addEventListener('transitionend', () => initMapIfNeeded());
-            const obs = new MutationObserver(() => {
-                const panel = document.querySelector('.wizard-step-panel[data-step="2"]');
-                if (panel && panel.classList.contains('active')) setTimeout(initMapIfNeeded, 100);
-            });
-            obs.observe(document.querySelector('.wizard-body'), { attributes: true, subtree: true, attributeFilter: ['class'] });
 
             document.getElementById('wizard-location-text').addEventListener('change', function() {
                 wizardState.locationText = this.value;
@@ -594,9 +609,10 @@
                 const alertsText = wizardState.alerts.filter(a => a.variable && a.value !== '').length
                     ? wizardState.alerts.map(a => a.variable + ' ' + a.operator + ' ' + a.value).join('; ')
                     : 'Nenhum';
+                const idPreview = wizardState.deviceIdStr || 'Será gerado ao baixar o código';
                 document.getElementById('wizard-summary').innerHTML = `
                     <div class="summary-block"><h4>Apelido</h4>${wizardState.name}</div>
-                    <div class="summary-block"><h4>ID</h4>${wizardState.deviceIdStr}</div>
+                    <div class="summary-block"><h4>ID do dispositivo</h4>${idPreview}</div>
                     <div class="summary-block"><h4>Localização</h4>${loc} ${wizardState.locationText ? ' — ' + wizardState.locationText : ''}</div>
                     <div class="summary-block"><h4>Variáveis</h4>${vars}</div>
                     <div class="summary-block"><h4>Email alertas</h4>${wizardState.alertEmail || '—'}</div>
@@ -606,32 +622,28 @@
             }
 
             // --- API e download ---
-            async function ensureDeviceCreated() {
-                if (wizardState.createdDeviceId) return wizardState.createdDeviceId;
-                const name = wizardState.name;
-                const deviceIdStr = wizardState.deviceIdStr;
-                const location = wizardState.locationText || (wizardState.lat != null ? wizardState.lat + ',' + wizardState.lng : null);
+            async function ensureDevicePrepared() {
+                if (wizardState.createdDeviceId && wizardState.brokerToken) return wizardState.createdDeviceId;
                 try {
-                    const res = await fetch('/api/devices', {
+                    const res = await fetch('/api/devices/prepare', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            name,
-                            device_id_str: deviceIdStr,
+                            name: wizardState.name,
                             description: '',
-                            location,
+                            location: wizardState.locationText || (wizardState.lat != null ? wizardState.lat + ',' + wizardState.lng : null),
                             lat: wizardState.lat,
                             lng: wizardState.lng
                         })
                     });
-                    if (res.ok) {
-                        const data = await res.json();
-                        wizardState.createdDeviceId = data.device_id_str || deviceIdStr;
-                    } else {
-                        wizardState.createdDeviceId = deviceIdStr;
-                    }
+                    if (!res.ok) throw new Error('Falha ao gerar identificador');
+                    const data = await res.json();
+                    wizardState.deviceIdStr = data.device_id_str;
+                    wizardState.brokerToken = data.token;
+                    wizardState.createdDeviceId = data.device_id_str;
                 } catch (e) {
-                    wizardState.createdDeviceId = deviceIdStr;
+                    console.error(e);
+                    throw e;
                 }
                 return wizardState.createdDeviceId;
             }
@@ -671,23 +683,47 @@
                 return getMqttConfig();
             }
 
-            function generateCppCode(deviceId, broker, intervalSec, variables) {
+            function generateCppCode(deviceId, brokerToken, broker, intervalSec, variables) {
                 const varsList = variables.filter(v => v.name).map(v => v.name);
                 const defaultValue = (v) => v.type === 'number' ? '0' : v.type === 'boolean' ? 'false' : '""';
                 const docLines = variables.filter(v => v.name).map(v => 'doc["' + v.name + '"] = ' + defaultValue(v) + '; // Substitua pela leitura do sensor').join('\n    ');
-                return `// Plataforma IoT - Dispositivo: ${wizardState.name}
-// ID: ${deviceId} | Broker: ${broker.brokerUrl} | Intervalo: ${intervalSec}s
-// Variáveis: ${varsList.join(', ')}
+                const brokerHost = (broker.host || 'SEU_BROKER').replace(/"/g, '');
+                const brokerPort = broker.port || 1883;
+                const brokerUrl = broker.brokerUrl || ('mqtt://' + brokerHost + ':' + brokerPort);
+                return `// =============================================================================
+// Argus - Plataforma IoT
+// Código gerado para o dispositivo: ${wizardState.name}
+// =============================================================================
+//
+// CONFIGURAÇÃO (preencha antes de enviar para a placa):
+//   1. WiFi: altere ssid e password abaixo.
+//   2. Broker já preenchido: ${brokerHost}:${brokerPort}
+//      Se o dispositivo não conectar (ex: broker em outro PC), troque mqtt_server
+//      pelo IP do computador onde o broker está (ex: "192.168.1.100").
+//
+// DADOS DESTE DISPOSITIVO:
+//   Device ID : ${deviceId}
+//   Broker    : ${brokerUrl}
+//   Tópico    : devices/${deviceId}/data
+//   Intervalo : ${intervalSec} segundos
+//   Variáveis : ${varsList.join(', ')}
+//
+// IMPORTANTE: O broker_key abaixo identifica este dispositivo. Não compartilhe.
+// =============================================================================
 
 #include <ESP8266WiFi.h>
 #include <PubSubClient.h>
 #include <ArduinoJson.h>
 
+// --- WiFi (obrigatório alterar) ---
 const char* ssid = "SUA_REDE_WIFI";
 const char* password = "SUA_SENHA_WIFI";
-const char* mqtt_server = "${(broker.host || 'SEU_BROKER').replace(/"/g, '')}";
-const int mqtt_port = ${broker.port || 1883};
+
+// --- Broker MQTT (endereço da plataforma Argus) ---
+const char* mqtt_server = "${brokerHost}";
+const int mqtt_port = ${brokerPort};
 const char* device_id = "${deviceId}";
+const char* broker_key = "${brokerToken}";
 const char* topic = "devices/${deviceId}/data";
 const long interval_ms = ${intervalSec * 1000}L;
 
@@ -720,9 +756,10 @@ void loop() {
   static unsigned long lastSend = 0;
   if (millis() - lastSend >= interval_ms) {
     lastSend = millis();
-    DynamicJsonDocument doc(256);
+    DynamicJsonDocument doc(384);
+    doc["broker_key"] = broker_key;
     ${docLines}
-    char buf[256];
+    char buf[384];
     serializeJson(doc, buf);
     client.publish(topic, buf);
   }
@@ -731,26 +768,50 @@ void loop() {
 `;
             }
 
-            function generateMicroPythonCode(deviceId, broker, intervalSec, variables) {
+            function generateMicroPythonCode(deviceId, brokerToken, broker, intervalSec, variables) {
                 const varsList = variables.filter(v => v.name);
                 const payloadEntries = varsList.map(v => {
                     const val = v.type === 'number' ? '0' : v.type === 'boolean' ? 'False' : '""';
                     return '"' + v.name + '": ' + val;
                 }).join(', ');
-                return `# Plataforma IoT - Dispositivo: ${wizardState.name}
-# ID: ${deviceId} | Broker: ${broker.brokerUrl} | Intervalo: ${intervalSec}s
-# Variáveis: ${varsList.map(v => v.name).join(', ')}
+                const brokerHost = (broker.host || 'SEU_BROKER').replace(/"/g, '');
+                const brokerPort = broker.port || 1883;
+                const brokerUrl = broker.brokerUrl || ('mqtt://' + brokerHost + ':' + brokerPort);
+                return `# =============================================================================
+# Argus - Plataforma IoT
+# Código gerado para o dispositivo: ${wizardState.name}
+# =============================================================================
+#
+# CONFIGURAÇÃO (preencha antes de enviar para a placa):
+#   1. WiFi: altere WIFI_SSID e WIFI_PASS abaixo.
+#   2. Broker já preenchido: ${brokerHost}:${brokerPort}
+#      Se o dispositivo não conectar, troque MQTT_HOST pelo IP do servidor
+#      onde o broker está (ex: "192.168.1.100").
+#
+# DADOS DESTE DISPOSITIVO:
+#   Device ID : ${deviceId}
+#   Broker    : ${brokerUrl}
+#   Tópico    : devices/${deviceId}/data
+#   Intervalo : ${intervalSec} segundos
+#   Variáveis : ${varsList.map(v => v.name).join(', ')}
+#
+# IMPORTANTE: BROKER_KEY identifica este dispositivo. Não compartilhe.
+# =============================================================================
 
 import network
 import time
 from umqtt.simple import MQTTClient
 import ujson
 
+# --- WiFi (obrigatório alterar) ---
 WIFI_SSID = "SUA_REDE_WIFI"
 WIFI_PASS = "SUA_SENHA_WIFI"
-MQTT_HOST = "${(broker.host || 'SEU_BROKER').replace(/"/g, '')}"
-MQTT_PORT = ${broker.port || 1883}
+
+# --- Broker MQTT (endereço da plataforma Argus) ---
+MQTT_HOST = "${brokerHost}"
+MQTT_PORT = ${brokerPort}
 DEVICE_ID = "${deviceId}"
+BROKER_KEY = "${brokerToken}"
 TOPIC = "devices/" + DEVICE_ID + "/data"
 INTERVAL_SEC = ${intervalSec}
 
@@ -767,7 +828,7 @@ def main():
     c = MQTTClient(DEVICE_ID, MQTT_HOST, port=MQTT_PORT)
     c.connect()
     while True:
-        payload = {${payloadEntries}}  # Substitua pelas leituras dos sensores
+        payload = {"broker_key": BROKER_KEY, ${payloadEntries}}  # Substitua pelas leituras dos sensores
         c.publish(TOPIC, ujson.dumps(payload))
         time.sleep(INTERVAL_SEC)
 
@@ -777,8 +838,14 @@ if __name__ == "__main__":
             }
 
             document.getElementById('wizard-download-code').addEventListener('click', async () => {
-                const deviceId = wizardState.createdDeviceId || wizardState.deviceIdStr;
-                await ensureDeviceCreated();
+                try {
+                    await ensureDevicePrepared();
+                } catch (e) {
+                    alert('Não foi possível gerar o identificador do dispositivo. Tente novamente.');
+                    return;
+                }
+                const deviceId = wizardState.createdDeviceId;
+                const brokerToken = wizardState.brokerToken;
                 await submitAlerts(deviceId);
                 const broker = await getBrokerForCode();
                 const intervalSec = wizardState.frequencySeconds;
@@ -786,8 +853,8 @@ if __name__ == "__main__":
                 const lang = document.querySelector('input[name="wizard-lang"]:checked').value;
                 const isCpp = lang === 'cpp';
                 const code = isCpp
-                    ? generateCppCode(deviceId, broker, intervalSec, variables)
-                    : generateMicroPythonCode(deviceId, broker, intervalSec, variables);
+                    ? generateCppCode(deviceId, brokerToken, broker, intervalSec, variables)
+                    : generateMicroPythonCode(deviceId, brokerToken, broker, intervalSec, variables);
                 const filename = isCpp ? 'device_' + deviceId + '.ino' : 'device_' + deviceId + '.py';
                 const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
                 const a = document.createElement('a');
@@ -796,9 +863,7 @@ if __name__ == "__main__":
                 a.click();
                 URL.revokeObjectURL(a.href);
                 closeWizard();
-                if (wizardState.createdDeviceId) {
-                    window.location.href = '/device_page.html?deviceId=' + encodeURIComponent(deviceId);
-                }
+                window.location.href = '/device_page.html?deviceId=' + encodeURIComponent(deviceId);
             });
 
             fetchDevices();

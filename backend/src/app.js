@@ -1,6 +1,7 @@
 const express = require('express');
 const dbService = require('./services/db_service');
 const mqttHandler = require('./services/mqtt_handler');
+const { mqtt: mqttConfig } = require('./config');
 
 async function startApp() {
     console.log('Iniciando a aplicação...');
@@ -15,14 +16,45 @@ async function startApp() {
 
         app.use(express.json());
 
-        // Endpoint para listar todos os dispositivos (usado na index.html)
+        // Configuração MQTT para o wizard (código gerado com endereço do broker)
+        app.get('/api/config/mqtt', (req, res) => {
+            try {
+                const { brokerUrl, host, port } = mqttConfig.getMqttCodeConfig();
+                res.json({ brokerUrl: brokerUrl || `mqtt://${host}:${port}`, host, port });
+            } catch (error) {
+                console.error('[API] Erro ao obter config MQTT:', error);
+                res.status(500).json({ message: 'Erro ao obter configuração do broker' });
+            }
+        });
+
+        // Endpoint para listar dispositivos (usado na index.html). ?online=true = só os que enviaram dados nos últimos 5 min
         app.get('/api/devices', async (req, res) => {
             try {
-                const devices = await dbService.getAllDevices();
+                const onlineOnly = req.query.online === 'true';
+                const devices = await dbService.getAllDevices(onlineOnly);
                 res.json(devices);
             } catch (error) {
                 console.error('[API] Falha ao buscar dispositivos:', error);
                 res.status(500).json({ message: 'Erro interno do servidor' });
+            }
+        });
+
+        // Gera device_id e token de registro para o código do wizard (ID único, sem conflito com nomes ou outros dispositivos)
+        app.post('/api/devices/prepare', async (req, res) => {
+            try {
+                const { name, description, location, lat, lng } = req.body || {};
+                const deviceIdStr = await dbService.generateUniqueDeviceId();
+                const token = await dbService.createRegistrationToken(deviceIdStr, {
+                    name: name || deviceIdStr,
+                    description: description || '',
+                    location: location || null,
+                    lat: lat != null ? parseFloat(lat) : null,
+                    lng: lng != null ? parseFloat(lng) : null
+                });
+                res.json({ device_id_str: deviceIdStr, token });
+            } catch (error) {
+                console.error('[API] Falha ao preparar dispositivo:', error);
+                res.status(500).json({ message: 'Erro ao gerar identificador do dispositivo' });
             }
         });
 
