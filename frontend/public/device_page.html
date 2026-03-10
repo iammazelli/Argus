@@ -127,9 +127,7 @@
             <h2>Detalhes do Dispositivo</h2>
             <div class="details-grid">
                 <div class="detail-item"><h3>ID</h3><p id="device-id-str">...</p></div>
-                <div class="detail-item"><h3>Localização</h3><p id="device-location">...</p></div>
-                <div class="detail-item"><h3>Descrição</h3><p id="device-description">...</p></div>
-                <div class="detail-item"><h3>Criado em</h3><p id="device-created-at">...</p></div>
+                <div class="detail-item"><h3>Última atividade</h3><p id="device-last-seen">...</p></div>
             </div>
         </div>
 
@@ -141,35 +139,12 @@
         </div>
 
         <div class="device-info">
-            <h2>Histórico e Análise</h2>
-            <div class="controls-container">
-                <div class="control-group">
-                    <label for="variable-select">Variável:</label>
-                    <select id="variable-select">
-                        <option value="">Aguardando dados...</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label for="granularity-select">Granularidade:</label>
-                    <select id="granularity-select">
-                        <option value="realtime">Tempo Real (Live)</option>
-                        <option value="minutal">Minutal (DB)</option>
-                        <option value="hourly">Horário (DB)</option>
-                        <option value="daily">Diário (DB)</option>
-                    </select>
-                </div>
-                <div class="control-group">
-                    <label>Início:</label>
-                    <input type="datetime-local" id="start-date">
-                </div>
-                <div class="control-group">
-                    <label>Fim:</label>
-                    <input type="datetime-local" id="end-date">
-                </div>
-                <div class="btn-container">
-                    <button class="btn-filter" onclick="handleFilterClick()">Filtrar</button>
-                    <button class="btn-filter btn-secondary" onclick="clearFilters()">Limpar</button>
-                </div>
+            <h2>Gráfico em tempo real</h2>
+            <div class="control-group" style="margin-bottom: 1rem;">
+                <label for="variable-select">Variável:</label>
+                <select id="variable-select">
+                    <option value="">Aguardando dados...</option>
+                </select>
             </div>
             <div style="height: 350px; position: relative;">
                 <canvas id="history-chart"></canvas>
@@ -180,7 +155,6 @@
     <script>
         let historyChart;
         let discoveredKeys = new Set();
-        let currentGranularity = 'realtime';
         let deviceId;
         const maxDataPoints = 60;
         const chartData = { labels: [] };
@@ -194,50 +168,22 @@
             fetchDeviceDetails(deviceId);
             connectToMqtt(deviceId);
             initChart();
-            setupEventListeners();
-            setupDateLimits();
-        });
-
-        function setupEventListeners() {
             document.getElementById('variable-select').addEventListener('change', updateChartDisplay);
-            document.getElementById('granularity-select').addEventListener('change', (e) => {
-                currentGranularity = e.target.value;
-                if (currentGranularity === 'realtime') {
-                    resetToRealtimeChart();
-                }
-            });
-        }
+        });
 
         async function fetchDeviceDetails(id) {
             try {
                 const response = await fetch(`/api/devices/${id}`);
                 const device = await response.json();
-                document.getElementById('device-name').textContent = device.name || 'Dispositivo';
+                document.getElementById('device-name').textContent = device.name || device.device_id_str || 'Dispositivo';
                 document.getElementById('device-id-str').textContent = device.device_id_str;
-                document.getElementById('device-location').textContent = device.location || 'N/A';
-                document.getElementById('device-description').textContent = device.description || 'N/A';
-                document.getElementById('device-created-at').textContent = new Date(device.created_at).toLocaleString('pt-BR');
-            } catch (e) { console.error(e); }
-        }
-
-        async function setupDateLimits() {
-            try {
-                const res = await fetch(`/api/history/${deviceId}/limits`);
-                const limits = await res.json();
-                if (limits.first && limits.last) {
-                    const minDate = new Date(limits.first).toISOString().slice(0, 16);
-                    const maxDate = new Date(limits.last).toISOString().slice(0, 16);
-                    const startInput = document.getElementById('start-date');
-                    const endInput = document.getElementById('end-date');
-                    
-                    startInput.min = minDate; startInput.max = maxDate;
-                    endInput.min = minDate; endInput.max = maxDate;
-                    
-                    // Mantém vazio por padrão para independência total
-                    startInput.value = "";
-                    endInput.value = "";
-                }
-            } catch (e) { console.error(e); }
+                const lastSeen = device.lastSeen ? new Date(device.lastSeen).toLocaleString('pt-BR') : 'N/A';
+                document.getElementById('device-last-seen').textContent = lastSeen;
+            } catch (e) {
+                document.getElementById('device-name').textContent = id;
+                document.getElementById('device-id-str').textContent = id;
+                document.getElementById('device-last-seen').textContent = 'Aguardando dados MQTT...';
+            }
         }
 
         function updateOrCreateCard(key, value) {
@@ -263,7 +209,7 @@
                 try {
                     const data = JSON.parse(m.toString());
                     Object.keys(data).forEach(k => {
-                        if (k === 'timestamp' || k === 'device_id') return;
+                        if (k === 'timestamp' || k === 'device_id' || k === 'broker_key') return;
                         updateOrCreateCard(k, data[k]);
                         if (!discoveredKeys.has(k)) {
                             discoveredKeys.add(k);
@@ -274,7 +220,7 @@
                             sel.appendChild(opt);
                         }
                     });
-                    if (currentGranularity === 'realtime') handleNewRealtimeData(data);
+                    handleNewRealtimeData(data);
                 } catch (e) { console.error(e); }
             });
         }
@@ -301,58 +247,11 @@
         }
 
         function updateChartDisplay() {
-            if (currentGranularity !== 'realtime') return;
             const v = document.getElementById('variable-select').value;
             if (!v || !chartData[v]) return;
             historyChart.data.labels = chartData.labels;
-            historyChart.data.datasets = [{ label: `${v.toUpperCase()} (Tempo Real)`, data: chartData[v], borderColor: "#005f73", backgroundColor: "rgba(0, 95, 115, 0.1)", fill: true, tension: 0.3 }];
+            historyChart.data.datasets = [{ label: `${v} (Tempo Real)`, data: chartData[v], borderColor: "#005f73", backgroundColor: "rgba(0, 95, 115, 0.1)", fill: true, tension: 0.3 }];
             historyChart.update('none');
-        }
-
-        function handleFilterClick() {
-            if (currentGranularity === 'realtime') {
-                alert("Selecione uma granularidade (Minutal, Horário ou Diário) para aplicar filtros de data.");
-                return;
-            }
-            fetchHistoricalData(currentGranularity);
-        }
-
-        async function fetchHistoricalData(type) {
-            const v = document.getElementById('variable-select').value;
-            const s = document.getElementById('start-date').value;
-            const e = document.getElementById('end-date').value;
-            if (!v) return alert("Selecione uma variável");
-
-            try {
-                const res = await fetch(`/api/history/${deviceId}?type=${type}&variable=${v}&start=${s}&end=${e}`);
-                const data = await res.json();
-                if (!data.labels || data.labels.length === 0) return alert("Nenhum dado encontrado para o período.");
-
-                const labels = data.labels.map(l => type === 'daily' ? new Date(l).toLocaleDateString('pt-BR') : l);
-                historyChart.data.labels = labels;
-                historyChart.data.datasets = [
-                    { label: `Média ${v}`, data: data.avg, borderColor: '#005f73', fill: false, tension: 0.1 },
-                    { label: `Máxima`, data: data.max, borderColor: '#ae2012', borderDash: [5, 5], fill: false },
-                    { label: `Mínima`, data: data.min, borderColor: '#4895ef', borderDash: [5, 5], fill: false }
-                ];
-                historyChart.update();
-            } catch (err) { alert("Erro ao carregar dados"); }
-        }
-
-        function resetToRealtimeChart() {
-            chartData.labels = [];
-            discoveredKeys.forEach(k => chartData[k] = []);
-            historyChart.data.labels = [];
-            historyChart.data.datasets = [{ label: 'Aguardando dados live...', data: [], borderColor: "#005f73", fill: true }];
-            historyChart.update();
-        }
-
-        function clearFilters() {
-            document.getElementById('start-date').value = "";
-            document.getElementById('end-date').value = "";
-            document.getElementById('granularity-select').value = "realtime";
-            currentGranularity = 'realtime';
-            resetToRealtimeChart();
         }
     </script>
 </body>

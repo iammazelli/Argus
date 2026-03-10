@@ -76,6 +76,19 @@
             line-height: 1.4;
         }
 
+        .device-card.device-online {
+            border-left: 4px solid #0a9;
+        }
+
+        .device-status { font-size: 0.9rem; color: #555; }
+
+        .msg-empty { font-size: 1.1rem; margin-bottom: 0.5rem; }
+        .msg-help { color: #666; font-size: 0.95rem; max-width: 560px; line-height: 1.5; margin-top: 1rem; }
+        .msg-error { color: #c44; }
+        .msg-ok { color: #0a9; font-size: 0.95rem; }
+        .msg-warn { color: #b86; font-size: 0.95rem; }
+        .msg-help code { background: #eee; padding: 0.1em 0.3em; border-radius: 3px; }
+
         /* Modal e Wizard */
         .wizard-overlay {
             display: none;
@@ -268,7 +281,7 @@
                 <!-- Etapa 5: Frequência -->
                 <div class="wizard-step-panel" data-step="5">
                     <div class="form-group">
-                        <label for="wizard-frequency">Frequência de escrita no banco</label>
+                        <label for="wizard-frequency">Frequência de envio (MQTT)</label>
                         <select id="wizard-frequency">
                             <option value="300">5 minutos</option>
                             <option value="600">10 minutos</option>
@@ -342,29 +355,45 @@
 
             async function fetchDevices() {
                 try {
-                    const response = await fetch('/api/devices?online=true');
+                    const response = await fetch('/api/devices');
                     if (!response.ok) throw new Error('Falha ao buscar dispositivos da API.');
                     const devices = await response.json();
-                    renderDevices(devices);
+                    await renderDevices(devices);
                 } catch (error) {
                     console.error('Erro:', error);
-                    deviceGrid.innerHTML = '<p>Não foi possível carregar os dispositivos.</p>';
+                    deviceGrid.innerHTML = '<p class="msg-error">Não foi possível carregar os dispositivos. Acesse o dashboard pela mesma origem da API (ex.: http://localhost:8080/ ou http://IP_DO_WSL:8080/).</p>';
                 }
             }
 
-            function renderDevices(devices) {
+            async function renderDevices(devices) {
                 deviceGrid.innerHTML = '';
                 if (devices.length === 0) {
-                    deviceGrid.innerHTML = '<p>Nenhum dispositivo online no momento. Conecte um dispositivo para que ele apareça aqui.</p>';
+                    let mqttStatus = '';
+                    try {
+                        const r = await fetch('/api/debug/mqtt');
+                        const d = await r.json();
+                        mqttStatus = d.mqttConnected
+                            ? '<p class="msg-ok">✓ Backend conectado ao broker MQTT. Aguardando publicações em <code>devices/&lt;id&gt;/data</code>.</p>'
+                            : '<p class="msg-warn">✗ Backend não está conectado ao broker. Verifique os logs do container <em>backend_app</em> e se o EMQX está no ar.</p>';
+                    } catch (e) {
+                        mqttStatus = '<p class="msg-warn">Não foi possível verificar o estado do MQTT.</p>';
+                    }
+                    deviceGrid.innerHTML = `
+                        <p class="msg-empty">Nenhum dispositivo recebido ainda.</p>
+                        ${mqttStatus}
+                        <p class="msg-help">O dispositivo deve publicar no tópico <strong>devices/&lt;id&gt;/data</strong> (ou <strong>devices/&lt;id&gt;</strong>), com payload em JSON (ex.: {"temperature": 25}). Use o mesmo broker que o backend (ex.: IP do WSL na porta 1883).</p>
+                    `;
                     return;
                 }
                 devices.forEach(device => {
                     const card = document.createElement('div');
-                    card.className = 'device-card';
+                    card.className = 'device-card' + (device.online ? ' device-online' : '');
                     card.dataset.deviceId = device.device_id_str;
+                    const lastSeen = device.lastSeen ? new Date(device.lastSeen).toLocaleString('pt-BR') : '';
+                    const status = device.online ? 'Enviando dados agora' : 'Última leitura: ' + lastSeen;
                     card.innerHTML = `
-                        <h2>${device.name || 'Dispositivo sem nome'}</h2>
-                        <p>${device.description || 'Nenhuma descrição fornecida.'}</p>
+                        <h2>${device.name || device.device_id_str || 'Dispositivo'}</h2>
+                        <p><span class="device-status">${status}</span></p>
                     `;
                     deviceGrid.appendChild(card);
                 });
@@ -621,51 +650,16 @@
                 `;
             }
 
-            // --- API e download ---
-            async function ensureDevicePrepared() {
+            // --- Geração local de ID e token (sem banco de dados) ---
+            function generateDeviceIdAndToken() {
                 if (wizardState.createdDeviceId && wizardState.brokerToken) return wizardState.createdDeviceId;
-                try {
-                    const res = await fetch('/api/devices/prepare', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            name: wizardState.name,
-                            description: '',
-                            location: wizardState.locationText || (wizardState.lat != null ? wizardState.lat + ',' + wizardState.lng : null),
-                            lat: wizardState.lat,
-                            lng: wizardState.lng
-                        })
-                    });
-                    if (!res.ok) throw new Error('Falha ao gerar identificador');
-                    const data = await res.json();
-                    wizardState.deviceIdStr = data.device_id_str;
-                    wizardState.brokerToken = data.token;
-                    wizardState.createdDeviceId = data.device_id_str;
-                } catch (e) {
-                    console.error(e);
-                    throw e;
-                }
+                const idSuffix = Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 10);
+                wizardState.deviceIdStr = 'device_' + idSuffix;
+                wizardState.brokerToken = typeof crypto !== 'undefined' && crypto.randomUUID
+                    ? crypto.randomUUID().replace(/-/g, '')
+                    : (Math.random().toString(36) + '00000000000000000').slice(2, 18);
+                wizardState.createdDeviceId = wizardState.deviceIdStr;
                 return wizardState.createdDeviceId;
-            }
-
-            async function submitAlerts(deviceIdStr) {
-                const alerts = wizardState.alerts.filter(a => a.variable && a.value !== '').map(a => ({
-                    email: wizardState.alertEmail,
-                    trigger_variable: a.variable,
-                    trigger_operator: a.operator,
-                    trigger_value: a.value,
-                    message: wizardState.alertMessage
-                }));
-                if (alerts.length === 0) return;
-                try {
-                    await fetch('/api/devices/' + encodeURIComponent(deviceIdStr) + '/alerts', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ alerts })
-                    });
-                } catch (e) {
-                    console.warn('Alertas não salvos (API pode não existir ainda):', e);
-                }
             }
 
             function getMqttConfig() {
@@ -839,14 +833,13 @@ if __name__ == "__main__":
 
             document.getElementById('wizard-download-code').addEventListener('click', async () => {
                 try {
-                    await ensureDevicePrepared();
+                    generateDeviceIdAndToken();
                 } catch (e) {
                     alert('Não foi possível gerar o identificador do dispositivo. Tente novamente.');
                     return;
                 }
                 const deviceId = wizardState.createdDeviceId;
                 const brokerToken = wizardState.brokerToken;
-                await submitAlerts(deviceId);
                 const broker = await getBrokerForCode();
                 const intervalSec = wizardState.frequencySeconds;
                 const variables = wizardState.variables;
@@ -867,6 +860,7 @@ if __name__ == "__main__":
             });
 
             fetchDevices();
+            setInterval(fetchDevices, 10000);
         });
     </script>
 </body>

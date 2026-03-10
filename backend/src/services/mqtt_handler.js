@@ -1,73 +1,76 @@
 const mqtt = require('mqtt');
 const { mqtt: mqttConfig } = require('../config');
-const { insertSensorData, getRegistrationByToken } = require('./db_service');
+const deviceStore = require('./device_store');
 
-const connect  = () => {
-    /**
-     * Inicia a conexão com o Broker mqtt e configura os listeners de eventos.
-     * Só aceita dados de dispositivos que possuem token de registro válido (broker_key no payload).
-     */
-    const client = mqtt.connect(mqttConfig.brokerUrl);
+let mqttClient = null;
 
-    // Evento disparado quando  a conexão é estabelecida com sucesso
-    client.on('connect', () => {
-        console.log('[MQTT] Conectado ao broker MQTT com sucesso!');
+function isConnected() {
+    return mqttClient != null && mqttClient.connected;
+}
 
-        // Após se conectar, se inscreve no tópico de interesse
-        client.subscribe(mqttConfig.topic, (err) => {
+const connect = () => {
+    const brokerUrl = mqttConfig.brokerUrl;
+    if (!brokerUrl) {
+        console.error('[MQTT] MQTT_BROKER_URL não definida. Defina no .env ou no docker-compose.');
+        return;
+    }
+    console.log('[MQTT] Conectando ao broker:', brokerUrl);
+    mqttClient = mqtt.connect(brokerUrl, { reconnectPeriod: 3000 });
+
+    mqttClient.on('connect', () => {
+        console.log('[MQTT] Conectado ao broker:', brokerUrl);
+        const topicToSub = mqttConfig.topicAll || mqttConfig.topic;
+        mqttClient.subscribe(topicToSub, (err) => {
             if (!err) {
-                console.log(`[MQTT] Inscrito no tópico: "${mqttConfig.topic}"`);
+                console.log(`[MQTT] Inscrito em "${topicToSub}" — aguardando mensagens em devices/<id>/data ou devices/<id>`);
             } else {
-                console.error(`[MQTT] Falha ao se inscrever no tópico:`, err);
+                console.error('[MQTT] Falha ao inscrever no tópico:', err);
             }
-        }); 
+        });
     });
 
-    // Evento disparado quando uma mensagem chega num tópico inscrito
-    client.on('message', async (topic, message) => {
+    mqttClient.on('message', (topic, message) => {
+        const parts = topic.split('/');
+        const deviceIdStr = parts[1];
+        if (!deviceIdStr) {
+            console.warn('[MQTT] Tópico ignorado (sem device_id):', topic);
+            return;
+        }
+        let raw;
         try {
-            const deviceIdStr = topic.split('/')[1];
-            const raw = JSON.parse(message.toString());
-            const brokerKey = raw.broker_key;
-            if (!brokerKey || typeof brokerKey !== 'string') {
-                console.warn(`[MQTT] Mensagem rejeitada (sem broker_key válido) do dispositivo ${deviceIdStr}`);
-                return;
-            }
-            const registration = await getRegistrationByToken(brokerKey);
-            if (!registration) {
-                console.warn(`[MQTT] Mensagem rejeitada (token inválido) do dispositivo ${deviceIdStr}`);
-                return;
-            }
-            if (registration.device_id_str !== deviceIdStr) {
-                console.warn(`[MQTT] Mensagem rejeitada (device_id do tópico não confere com o token) do dispositivo ${deviceIdStr}`);
-                return;
-            }
-            const { broker_key, ...data } = raw;
-            console.log(`[MQTT] Mensagem recebida do dispositivo ${deviceIdStr}:`, data);
-            insertSensorData(deviceIdStr, data, {
-                name: registration.name,
-                description: registration.description,
-                location: registration.location,
-                lat: registration.lat,
-                lng: registration.lng
-            });
+            raw = JSON.parse(message.toString());
         } catch (error) {
-            console.error(`[MQTT] Erro ao processar mensagem do tópico ${topic}:`, error);
+            console.error(`[MQTT] Payload não é JSON válido no tópico ${topic}. Início:`, String(message).slice(0, 200));
+            return;
+        }
+        if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) {
+            console.warn('[MQTT] Payload ignorado (deve ser objeto JSON):', topic);
+            return;
+        }
+        try {
+            deviceStore.upsertDevice(deviceIdStr, raw);
+            const { broker_key, ...data } = raw;
+            console.log(`[MQTT] Dispositivo "${deviceIdStr}" atualizado. Dados:`, data);
+        } catch (error) {
+            console.error(`[MQTT] Erro ao processar mensagem do dispositivo ${deviceIdStr}:`, error);
         }
     });
 
-    //Evento para lidar com erros de conexão
-    client.on('error', (error) => {
+    mqttClient.on('error', (error) => {
         console.error('[MQTT] Erro de conexão:', error);
-        client.end(); // Encerra o cliente em caso de erro grave
     });
 
-    // Evento para logar tentativas de reconexão
-    client.on('reconnect', () => {
-        console.log('[MQTT] Tentando reconectar ao broker...');
+    mqttClient.on('reconnect', () => {
+        console.log('[MQTT] Reconectando ao broker...');
+    });
+
+    mqttClient.on('offline', () => {
+        console.warn('[MQTT] Cliente offline.');
     });
 };
 
 module.exports = {
-    connect
+    connect,
+    isConnected,
+    getClient: () => mqttClient
 };

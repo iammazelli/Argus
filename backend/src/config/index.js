@@ -21,16 +21,10 @@ function getMqttCodeConfig() {
 }
 
 module.exports = {
-    database: {
-        host: process.env.MYSQL_HOST,
-        port: process.env.MYSQL_PORT,
-        user: process.env.MYSQL_USER,
-        password: process.env.MYSQL_PASSWORD,
-        database: process.env.MYSQL_DB
-    },
     mqtt: {
-        brokerUrl: process.env.MQTT_BROKER_URL,
+        brokerUrl: process.env.MQTT_BROKER_URL || 'mqtt://localhost:1883',
         topic: 'devices/+/data',
+        topicAll: 'devices/#',  // aceita também devices/<id> sem /data
         getMqttCodeConfig
     }
 };
