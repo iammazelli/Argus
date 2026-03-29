@@ -39,13 +39,13 @@ TZ=America/Sao_Paulo
 
 # Conexão com o Banco de Dados (Servidor B)
 DB_HOST=mysql
-DB_PORT=3306
+DB_PORT=
 DB_USER=argus
 DB_PASSWORD=
 DB_NAME=
 
 # Conexão com o Broker MQTT (Local no Servidor A)
-MQTT_BROKER=mqtt://emqx:1883
+MQTT_BROKER=
 MQTT_USERNAME=
 MQTT_PASSWORD=
 
