@@ -1,0 +1,23 @@
+{
+  "name": "argus-backend",
+  "version": "1.0.0",
+  "description": "Argus IoT Platform - Backend API",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "nodemon --watch src --ext js,json src/server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "express-validator": "^7.1.0",
+    "mqtt": "^5.6.0",
+    "mysql2": "^3.9.7",
+    "node-cron": "^4.2.1",
+    "nodemailer": "^8.0.4",
+    "uuid": "^10.0.0"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.3"
+  }
+}

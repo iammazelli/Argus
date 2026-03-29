@@ -1,0 +1,15 @@
+# Dependências
+node_modules/
+npm-debug.log
+
+# Variáveis de Ambiente (SEGURANÇA!)
+.env
+
+# Dados de Volumes Locais (Docker)
+emqx-data/
+emqx-log/
+mysql-data/
+
+# Sistema
+.DS_Store
+Thumbs.db

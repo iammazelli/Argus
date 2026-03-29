@@ -1,0 +1,62 @@
+services:
+  emqx:
+    image: emqx/emqx:5.1.0
+    container_name: argus-emqx
+    restart: unless-stopped
+    ports:
+      - "1883:1883"    # MQTT
+      - "8083:8083"    # MQTT over WebSocket
+      - "18083:18083"  # Dashboard EMQX
+    environment:
+      EMQX_NODE_NAME: emqx@127.0.0.1
+      EMQX_DASHBOARD__DEFAULT_PASSWORD: argus@2024
+    volumes:
+      - emqx-data:/opt/emqx/data
+      - emqx-log:/opt/emqx/log
+    networks:
+      - argus-net
+    healthcheck:
+      test: ["CMD", "emqx", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: argus-backend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      TZ: America/Sao_Paulo
+      NODE_ENV: development
+      PORT: 3000
+      DB_HOST: ${DB_HOST:-mysql}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:-argus}
+      DB_PASSWORD: ${DB_PASSWORD:-argus@2024}
+      DB_NAME: ${DB_NAME:-ArgusDB}
+      MQTT_BROKER: mqtt://emqx:1883
+      MQTT_USERNAME: argus-backend
+      MQTT_PASSWORD: backend@2024
+      JWT_SECRET: ${JWT_SECRET:-argus_jwt_secret_change_in_production}
+    volumes:
+      - ./src:/app/src
+      - ./package.json:/app/package.json
+    depends_on:
+      emqx:
+        condition: service_healthy
+    networks:
+      - argus-net
+
+# Configuração para conectar na rede criada pelo projeto do Servidor B
+networks:
+  argus-net:
+    external: true
+    name: argus-shared-net
+
+volumes:
+  emqx-data:
+  emqx-log:

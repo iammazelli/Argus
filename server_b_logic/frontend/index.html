@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Argus — Dashboard IoT</title>
+  <link rel="stylesheet" href="/css/argus.css"/>
+  <style>
+    .hero {
+      padding: 40px 32px 24px;
+    }
+    .hero h1 { font-size: 26px; font-weight: 700; margin-bottom: 4px; }
+    .hero p  { color: var(--text2); font-size: 15px; }
+
+    .stats-row {
+      display: flex;
+      gap: 16px;
+      padding: 0 32px 32px;
+    }
+    .stat-card {
+      flex: 1;
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 20px;
+    }
+    .stat-card .stat-value { font-size: 28px; font-weight: 700; }
+    .stat-card .stat-label { font-size: 13px; color: var(--text2); margin-top: 2px; }
+    .stat-online .stat-value { color: var(--green); }
+
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 32px 16px;
+    }
+    .section-header h2 { font-size: 18px; font-weight: 600; }
+
+    .device-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+      gap: 16px;
+      padding: 0 32px 40px;
+    }
+
+    .device-card {
+      background: var(--bg2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      cursor: pointer;
+      transition: border-color .2s, transform .15s, box-shadow .2s;
+      text-decoration: none;
+      color: inherit;
+      display: block;
+    }
+    .device-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-3px);
+      box-shadow: 0 8px 32px rgba(61,142,240,.15);
+    }
+
+    .device-card-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      margin-bottom: 12px;
+    }
+    .device-card-name {
+      font-size: 16px;
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .device-card-location {
+      font-size: 12px;
+      color: var(--text2);
+    }
+
+    .device-readings {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 14px;
+      padding-top: 14px;
+      border-top: 1px solid var(--border);
+    }
+    .reading-pill {
+      background: var(--bg3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 12px;
+    }
+    .reading-pill span { color: var(--text2); }
+    .reading-pill strong { color: var(--accent); margin-left: 4px; }
+
+    .device-card-footer {
+      margin-top: 14px;
+      font-size: 12px;
+      color: var(--text2);
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 60px 32px;
+      color: var(--text2);
+    }
+    .empty-state .icon { font-size: 48px; margin-bottom: 12px; }
+    .empty-state h3 { font-size: 18px; color: var(--text); margin-bottom: 6px; }
+  </style>
+</head>
+<body>
+
+<!-- ── Topbar ── -->
+<nav class="topbar">
+  <a href="/" class="topbar-brand">
+    <span class="logo-dot"></span>
+    Argus
+  </a>
+  <div class="topbar-actions">
+    <a href="/pages/register.html" class="btn btn-primary">+ Novo Dispositivo</a>
+  </div>
+</nav>
+
+<!-- ── Hero ── -->
+<div class="hero">
+  <h1>Dashboard de Dispositivos</h1>
+  <p>Monitoramento em tempo real da sua infraestrutura IoT</p>
+</div>
+
+<!-- ── Stats ── -->
+<div class="stats-row" id="stats-row">
+  <div class="stat-card">
+    <div class="stat-value" id="stat-total">—</div>
+    <div class="stat-label">Total de dispositivos</div>
+  </div>
+  <div class="stat-card stat-online">
+    <div class="stat-value" id="stat-online">—</div>
+    <div class="stat-label">Online agora</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" id="stat-offline">—</div>
+    <div class="stat-label">Offline</div>
+  </div>
+</div>
+
+<!-- ── Device Grid ── -->
+<div class="section-header">
+  <h2>Dispositivos Conectados</h2>
+  <button class="btn btn-ghost btn-sm" onclick="loadDevices()">↻ Atualizar</button>
+</div>
+
+<div id="device-grid" class="device-grid">
+  <div class="spinner"></div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  async function loadDevices() {
+    const grid = document.getElementById('device-grid');
+    grid.innerHTML = '<div class="spinner"></div>';
+
+    try {
+      const { data: devices } = await api.get('/devices');
+
+      // Stats
+      const online  = devices.filter(d => d.IsOnline).length;
+      const offline  = devices.length - online;
+      document.getElementById('stat-total').textContent  = devices.length;
+      document.getElementById('stat-online').textContent = online;
+      document.getElementById('stat-offline').textContent= offline;
+
+      if (devices.length === 0) {
+        grid.innerHTML = `
+          <div class="empty-state" style="grid-column:1/-1">
+            <div class="icon">📡</div>
+            <h3>Nenhum dispositivo cadastrado</h3>
+            <p>Adicione seu primeiro dispositivo para começar o monitoramento.</p>
+            <a href="/pages/register.html" class="btn btn-primary" style="margin-top:16px">+ Cadastrar dispositivo</a>
+          </div>`;
+        return;
+      }
+
+      grid.innerHTML = devices.map(d => buildDeviceCard(d)).join('');
+
+    } catch (err) {
+      grid.innerHTML = `<p style="color:var(--red);padding:32px">Erro ao carregar dispositivos: ${err.message}</p>`;
+    }
+  }
+
+  function buildDeviceCard(d) {
+    const readings = d.LatestReadings ? JSON.parse(typeof d.LatestReadings === 'string' ? d.LatestReadings : JSON.stringify(d.LatestReadings)) : {};
+    const readingPills = Object.entries(readings).map(([k, v]) =>
+      `<div class="reading-pill"><span>${k}</span><strong>${Number(v).toFixed(2)}</strong></div>`
+    ).join('');
+
+    return `
+      <a class="device-card fade-up" href="/pages/device.html?id=${d.DeviceId}">
+        <div class="device-card-header">
+          <div>
+            <div class="device-card-name">${d.Name}</div>
+            <div class="device-card-location">📍 ${d.LocationLabel || `${d.Latitude}, ${d.Longitude}`}</div>
+          </div>
+          <span class="badge ${d.IsOnline ? 'badge-online' : 'badge-offline'}">
+            ${d.IsOnline ? 'Online' : 'Offline'}
+          </span>
+        </div>
+        ${readingPills ? `<div class="device-readings">${readingPills}</div>` : ''}
+        <div class="device-card-footer">Última leitura: ${timeSince(d.LastSeenAt)}</div>
+      </a>`;
+  }
+
+  // Auto-refresh a cada 10s
+  loadDevices();
+  setInterval(loadDevices, 10000);
+</script>
+</body>
+</html>

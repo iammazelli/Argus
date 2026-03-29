@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Argus — Cadastrar Dispositivo</title>
+  <link rel="stylesheet" href="/css/argus.css"/>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin=""/>
+  <style>
+    .container { max-width: 600px; margin: 40px auto; padding: 0 20px; }
+    .card { margin-top: 24px; }
+    .form-footer { display: flex; justify-content: flex-end; gap: 12px; margin-top: 24px; }
+    #wizard-map { height: 280px; border-radius: 8px; border: 1px solid var(--border); margin-top: 8px; z-index: 1; }
+  </style>
+</head>
+<body>
+
+<nav class="topbar">
+  <a href="/" class="topbar-brand">
+    <span class="logo-dot"></span>
+    Argus
+  </a>
+</nav>
+
+<div class="container">
+  <div class="fade-up">
+    <h1>Novo Dispositivo</h1>
+    <p style="color: var(--text2)">Preencha os dados abaixo para registrar um novo sensor na plataforma.</p>
+  </div>
+
+  <div class="card fade-up" style="animation-delay: 0.1s">
+    <form id="register-form">
+      <div style="display: grid; gap: 20px;">
+        <div class="form-group">
+          <label class="form-label">Nome do Dispositivo</label>
+          <input type="text" id="name" class="form-input" placeholder="Ex: Sensor de Temperatura Sala 01" required/>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">E-mail do Responsável</label>
+          <input type="email" id="email" class="form-input" placeholder="admin@empresa.com" required/>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Localização (Clique no mapa para selecionar) *</label>
+          <div id="wizard-map"></div>
+          <small id="wizard-coords-display" style="color: var(--text2); margin-top: 4px; display: block;">Coordenadas: Nenhuma selecionada</small>
+          
+          <input type="hidden" id="latitude" required/>
+          <input type="hidden" id="longitude" required/>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Rótulo de Localização (Opcional)</label>
+          <input type="text" id="locationLabel" class="form-input" placeholder="Ex: Prédio A, Segundo Andar"/>
+        </div>
+      </div>
+
+      <div class="form-footer">
+        <a href="/" class="btn btn-ghost">Cancelar</a>
+        <button type="submit" class="btn btn-primary">Cadastrar Dispositivo</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+<script>
+  // Inicialização do Mapa
+  let map = L.map('wizard-map').setView([-23.5505, -46.6333], 10); // Padrão: São Paulo
+  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png').addTo(map);
+  let marker = null;
+
+  map.on('click', e => {
+    const lat = e.latlng.lat;
+    const lng = e.latlng.lng;
+    
+    // Atualiza os inputs ocultos e o texto na tela
+    document.getElementById('latitude').value = lat;
+    document.getElementById('longitude').value = lng;
+    document.getElementById('wizard-coords-display').textContent = `Coordenadas: Lat ${lat.toFixed(4)}, Lng ${lng.toFixed(4)}`;
+
+    if (marker) {
+      marker.setLatLng(e.latlng);
+    } else {
+      marker = L.marker(e.latlng).addTo(map);
+    }
+  });
+
+  // Submissão do Formulário
+  document.getElementById('register-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    
+    const latStr = document.getElementById('latitude').value;
+    const lngStr = document.getElementById('longitude').value;
+
+    if (!latStr || !lngStr) {
+      showToast('Por favor, selecione a localização no mapa.', 'error');
+      return;
+    }
+
+    const data = {
+      name: document.getElementById('name').value,
+      email: document.getElementById('email').value,
+      latitude: parseFloat(latStr),
+      longitude: parseFloat(lngStr),
+      locationLabel: document.getElementById('locationLabel').value
+    };
+
+    try {
+      const response = await api.post('/devices', data);
+      showToast('Dispositivo cadastrado com sucesso!', 'success');
+      setTimeout(() => window.location.href = '/', 1500);
+    } catch (err) {
+      showToast('Erro ao cadastrar: ' + err.message, 'error');
+    }
+  });
+</script>
+</body>
+</html>

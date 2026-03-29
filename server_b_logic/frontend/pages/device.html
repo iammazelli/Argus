@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Argus — Detalhes do Dispositivo</title>
+  <link rel="stylesheet" href="/css/argus.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    .main-content { padding: 32px; max-width: 1200px; margin: 0 auto; }
+    .header-actions { display: flex; gap: 12px; }
+    .device-header { margin-bottom: 32px; display: flex; justify-content: space-between; align-items: flex-start; }
+    
+    .grid-layout { display: grid; grid-template-columns: 1fr 350px; gap: 24px; }
+    
+    /* Ajuste para os cards de leitura ficarem lado a lado (estilo Dashboard) */
+    #readings-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 16px;
+      margin-top: 16px;
+    }
+    
+    .reading-card { 
+      background: var(--bg3); padding: 20px; border-radius: var(--radius); 
+      border: 1px solid var(--border); border-left: 4px solid var(--accent);
+    }
+    .reading-value { font-size: 32px; font-weight: 700; color: var(--text); margin-top: 8px; }
+    .reading-time { font-size: 12px; color: var(--text2); margin-top: 4px; }
+    
+    .tech-info-box { background: rgba(0,0,0,0.2); padding: 8px; border-radius: 6px; margin-top: 4px; font-family: monospace; color: var(--accent); word-break: break-all; }
+    
+    /* Controles do Gráfico */
+    .controls-container {
+      display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end;
+      background: var(--bg3); padding: 16px; border-radius: var(--radius);
+      border: 1px solid var(--border); margin-bottom: 20px;
+    }
+  </style>
+</head>
+<body>
+
+<nav class="topbar">
+  <a href="/" class="topbar-brand"><span class="logo-dot"></span>Argus</a>
+</nav>
+
+<div class="main-content">
+  <div id="device-info" class="fade-up">
+    <div class="spinner"></div>
+  </div>
+
+  <div class="grid-layout">
+    <div id="main-column">
+      <h2>Últimas Leituras</h2>
+      <div id="readings-list">
+        <p class="empty-state">A aguardar dados...</p>
+      </div>
+
+      <div class="card fade-up" style="margin-top: 24px; animation-delay: 0.1s;">
+        <h3>Histórico e Análise</h3>
+        
+        <div class="controls-container" style="margin-top: 16px;">
+          <div class="form-group" style="flex: 1; min-width: 150px;">
+            <label class="form-label">Variável</label>
+            <select id="var-select" class="form-input"></select>
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 150px;">
+            <label class="form-label">Granularidade</label>
+            <select id="granularity-select" class="form-input">
+              <option value="raw">Tempo Real (Raw)</option>
+              <option value="minute">Minutal</option>
+              <option value="hour" selected>Horário</option>
+              <option value="day">Diário</option>
+            </select>
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 150px;">
+            <label class="form-label">Início</label>
+            <input type="datetime-local" id="start-date" class="form-input">
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 150px;">
+            <label class="form-label">Fim</label>
+            <input type="datetime-local" id="end-date" class="form-input">
+          </div>
+          <button class="btn btn-primary" style="height: 40px;" onclick="loadHistory()">Filtrar</button>
+        </div>
+
+        <div style="height: 350px; position: relative; width: 100%;">
+          <canvas id="historyChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <div id="side-info">
+      <div class="card">
+        <h3>Informações de Ligação</h3>
+        <p style="font-size: 12px; color: var(--text2); margin-top: 8px;">Utilize os dados abaixo para configurar o seu hardware.</p>
+        <div style="margin-top: 16px; font-size: 14px; line-height: 1.5;">
+          <div style="margin-bottom: 16px;">
+            <span style="color:var(--text2); font-weight: 500;">Hash do Dispositivo:</span>
+            <div id="display-id" class="tech-info-box">—</div>
+          </div>
+          <div>
+            <span style="color:var(--text2); font-weight: 500;">Tópico MQTT:</span>
+            <div id="display-topic" class="tech-info-box">—</div>
+          </div>
+        </div>
+      </div>
+      <button class="btn btn-danger" style="width: 100%; margin-top: 24px;" onclick="handleDelete()">Desativar Dispositivo</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  const deviceId = getDeviceIdFromUrl();
+  let chartInstance = null;
+  let chartDataMap = {}; // Armazena leituras em tempo real para o modo "raw"
+
+  // 1. Inicializa o gráfico vazio
+  function initChart() {
+    const ctx = document.getElementById('historyChart').getContext('2d');
+    Chart.defaults.color = '#94a3b8'; // Cor do texto para tema escuro
+    
+    chartInstance = new Chart(ctx, {
+      type: 'line',
+      data: { labels: [], datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        scales: {
+          x: { grid: { color: '#2d3148' } },
+          y: { grid: { color: '#2d3148' }, beginAtZero: false }
+        },
+        plugins: {
+          legend: { display: true, position: 'top' }
+        }
+      }
+    });
+  }
+
+  // 2. Carrega Detalhes
+  async function loadDeviceDetails() {
+    if (!deviceId) return window.location.href = '/';
+    try {
+      const { data: device } = await api.get(`/devices/${deviceId}`);
+      document.getElementById('device-info').innerHTML = `
+        <div class="device-header">
+          <div>
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <h1>${device.Name}</h1>
+              <span class="badge ${device.IsOnline ? 'badge-online' : 'badge-offline'}">
+                ${device.IsOnline ? 'Online' : 'Offline'}
+              </span>
+            </div>
+            <p style="color: var(--text2)">📍 ${device.LocationLabel || 'Localização não definida'}</p>
+          </div>
+        </div>
+      `;
+      document.getElementById('display-id').textContent = device.DeviceId;
+      document.getElementById('display-topic').textContent = `argus/${device.DeviceId}/telemetry`;
+    } catch (err) {
+      showToast('Erro ao carregar detalhes.', 'error');
+    }
+  }
+
+  // 3. Carrega Variáveis Disponíveis para o Select
+  async function loadVariables() {
+    try {
+      const { data: vars } = await api.get(`/devices/${deviceId}/readings/variables`);
+      const select = document.getElementById('var-select');
+      select.innerHTML = vars.map((v, i) => `<option value="${v}" ${i===0?'selected':''}>${v.toUpperCase()}</option>`).join('');
+      if (vars.length > 0) loadHistory();
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // 4. Carrega Histórico na API REST
+  async function loadHistory() {
+    const variable = document.getElementById('var-select').value;
+    const granularity = document.getElementById('granularity-select').value;
+    const from = document.getElementById('start-date').value;
+    const to = document.getElementById('end-date').value;
+
+    if (!variable) return;
+
+    let url = `/devices/${deviceId}/readings/history?variable=${variable}&granularity=${granularity}`;
+    if (from) url += `&from=${new Date(from).toISOString()}`;
+    if (to) url += `&to=${new Date(to).toISOString()}`;
+
+    try {
+      const { data } = await api.get(url);
+      
+      const labels = data.map(d => {
+        const date = new Date(d.Timestamp);
+        return granularity === 'raw' || granularity === 'minute' ? date.toLocaleTimeString('pt-BR') : date.toLocaleString('pt-BR');
+      });
+      const values = data.map(d => d.Value);
+
+      chartInstance.data.labels = labels;
+      chartInstance.data.datasets = [{
+        label: `${variable.toUpperCase()} (${granularity})`,
+        data: values,
+        borderColor: '#3d8ef0',
+        backgroundColor: 'rgba(61, 142, 240, 0.1)',
+        borderWidth: 2,
+        fill: true,
+        tension: 0.3,
+        pointRadius: granularity === 'raw' ? 0 : 3
+      }];
+      chartInstance.update();
+    } catch (err) {
+      showToast('Erro ao carregar histórico', 'error');
+    }
+  }
+
+  // 5. Atualiza Leituras em Tempo Real (Cards)
+  async function loadReadings() {
+    try {
+      const { data: readings } = await api.get(`/devices/${deviceId}/readings/latest`);
+      const container = document.getElementById('readings-list');
+
+      if (!readings || readings.length === 0) {
+        container.innerHTML = '<p class="empty-state">Nenhuma leitura registada ainda.</p>';
+        return;
+      }
+
+      container.innerHTML = readings.map(r => `
+        <div class="reading-card fade-up">
+          <div style="text-transform: capitalize; font-size: 14px; color: var(--text2)">${r.Variable}</div>
+          <div class="reading-value">${Number(r.Value).toFixed(2)}</div>
+          <div class="reading-time">Hoje, ${new Date(r.RecordedAt).toLocaleTimeString('pt-BR')}</div>
+        </div>
+      `).join('');
+
+      // Auto-update gráfico em modo Tempo Real (raw) sem resetar filtros se for o dia atual
+      const isRaw = document.getElementById('granularity-select').value === 'raw';
+      if (isRaw) loadHistory(); 
+
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function handleDelete() {
+    if (!confirm('Tem a certeza de que deseja desativar este dispositivo?')) return;
+    try {
+      await api.delete(`/devices/${deviceId}`);
+      showToast('Dispositivo desativado');
+      window.location.href = '/';
+    } catch (err) {
+      showToast(err.message, 'error');
+    }
+  }
+
+  // Inicialização
+  initChart();
+  loadDeviceDetails();
+  loadVariables();
+  loadReadings();
+  
+  // Polling a cada 5s para dados mais recentes
+  setInterval(loadReadings, 5000);
+</script>
+</body>
+</html>
