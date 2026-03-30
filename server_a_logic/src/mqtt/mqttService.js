@@ -4,14 +4,19 @@ const { pool } = require('../config/database');
 let client = null;
 
 function connect() {
-  const brokerUrl = process.env.MQTT_BROKER || 'mqtt://localhost:1883';
+  // Ajustado para MQTT_URL (seu .env) e emqx (nome do container)
+  const brokerUrl = process.env.MQTT_URL || 'mqtt://emqx:1883';
+  
+  console.log('[DEBUG] Tentando conectar ao MQTT em:', brokerUrl);
 
   client = mqtt.connect(brokerUrl, {
     clientId: `argus-backend-${Date.now()}`,
-    username: process.env.MQTT_USERNAME || 'argus-backend',
-    password: process.env.MQTT_PASSWORD || 'backend@2024',
+    username: process.env.MQTT_USERNAME,
+    password: process.env.MQTT_PASSWORD,
+    connectTimeout: 15000,
     clean: true,
     reconnectPeriod: 5000,
+    protocolVersion: 4 // Garante estabilidade no handshake
   });
 
   client.on('connect', () => {
@@ -26,7 +31,10 @@ function connect() {
     await handleMessage(topic, payload);
   });
 
-  client.on('error', (err) => console.error('[MQTT] Erro:', err.message));
+  client.on('error', (err) => {
+    console.error('[MQTT] Erro:', err.message);
+  });
+  
   client.on('reconnect', () => console.log('[MQTT] Reconectando...'));
   client.on('offline', () => console.warn('[MQTT] Cliente offline.'));
 }
@@ -36,7 +44,7 @@ async function handleMessage(topic, payload) {
     const parts = topic.split('/');
     if (parts.length !== 3 || parts[0] !== 'argus' || parts[2] !== 'telemetry') return;
 
-    const deviceHash = parts[1]; // Agora recebemos o Hash da URL
+    const deviceHash = parts[1];
     const dataPayload = payload.toString();
     const parsedData = JSON.parse(dataPayload);
 
@@ -51,7 +59,7 @@ async function handleMessage(topic, payload) {
       return;
     }
 
-    const deviceId = rows[0].Device_Id; // O INT de alta performance
+    const deviceId = rows[0].Device_Id;
 
     // 2. Persistência
     const strPayload = JSON.stringify(parsedData);

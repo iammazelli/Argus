@@ -1,62 +1,37 @@
+
 services:
   emqx:
     image: emqx/emqx:5.1.0
-    container_name: argus-emqx
+    container_name: argus-broker
+    hostname: emqx
     restart: unless-stopped
-    ports:
-      - "1883:1883"    # MQTT
-      - "8083:8083"    # MQTT over WebSocket
-      - "18083:18083"  # Dashboard EMQX
     environment:
-      EMQX_NODE_NAME: emqx@127.0.0.1
-      EMQX_DASHBOARD__DEFAULT_PASSWORD: argus@2024
-    volumes:
-      - emqx-data:/opt/emqx/data
-      - emqx-log:/opt/emqx/log
-    networks:
-      - argus-net
-    healthcheck:
-      test: ["CMD", "emqx", "ping"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
+      - "EMQX_ALLOW_ANONYMOUS=true"
+      - "EMQX_DASHBOARD__DEFAULT_PASSWORD=${MQTT_PASSWORD}"
+    ports:
+      - "${MQTT_PORT_TCP}:1883"
+      - "${MQTT_PORT_DASHBOARD}:18083"
+    networks: [argus-shared-net]
 
   backend:
-    build:
-      context: .
-      dockerfile: Dockerfile
+    build: .
     container_name: argus-backend
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "${BACKEND_PORT}:3000"
+    env_file: [../.env]
     environment:
-      TZ: America/Sao_Paulo
-      NODE_ENV: development
-      PORT: 3000
-      DB_HOST: ${DB_HOST:-mysql}
-      DB_PORT: ${DB_PORT:-3306}
-      DB_USER: ${DB_USER:-argus}
-      DB_PASSWORD: ${DB_PASSWORD:-argus@2024}
-      DB_NAME: ${DB_NAME:-ArgusDB}
-      MQTT_BROKER: mqtt://emqx:1883
-      MQTT_USERNAME: argus-backend
-      MQTT_PASSWORD: backend@2024
-      JWT_SECRET: ${JWT_SECRET:-argus_jwt_secret_change_in_production}
-    volumes:
-      - ./src:/app/src
-      - ./package.json:/app/package.json
-    depends_on:
-      emqx:
-        condition: service_healthy
-    networks:
-      - argus-net
+      - DB_HOST=argus-mysql
+      - DB_PORT=3306
+      - DB_USER=${DB_USER}
+      - DB_PASS=${DB_PASSWORD}
+      - DB_NAME=${DB_NAME}
+      - MQTT_URL=mqtt://emqx:1883
+      - MQTT_USER=${MQTT_USERNAME}
+      - MQTT_PASS=${MQTT_PASSWORD}
+    networks: [argus-shared-net]
 
-# Configuração para conectar na rede criada pelo projeto do Servidor B
 networks:
-  argus-net:
+  argus-shared-net:
     external: true
     name: argus-shared-net
-
-volumes:
-  emqx-data:
-  emqx-log:
