@@ -34,42 +34,40 @@ Para que o sistema funcione corretamente, você deve criar um arquivo `.env` na 
 Crie o arquivo em `Argus/server_a_logic/.env`:
 
 ```env
-# Fuso Horário
-TZ=America/Sao_Paulo
+# ==========================================
+# 1. CONFIGURAÇÕES EM COMUM (SHARED)
+# ==========================================
+DB_USER=""
+DB_PASSWORD=""
+DB_DATABASE=""
+TZ="America/Sao_Paulo"
 
-# Conexão com o Banco de Dados (Servidor B)
-DB_HOST=mysql
-DB_PORT=
-DB_USER=argus
-DB_PASSWORD=
-DB_NAME=
+# ==========================================
+# 2. CONFIGURAÇÕES PARA O SERVIDOR A (LOCAL)
+# ==========================================
+# Ligação ao Banco de Dados Remoto 
+SERVER_B_IP="" 
+DB_PORT=3307                     
 
-# Conexão com o Broker MQTT (Local no Servidor A)
-MQTT_BROKER=
-MQTT_USERNAME=
-MQTT_PASSWORD=
+# Configurações do MQTT
+MQTT_PORT_TCP=1883
+MQTT_PORT_DASHBOARD=18083
+MQTT_USERNAME=""
+MQTT_PASSWORD=""
 
-# Segurança e Ambiente
-JWT_SECRET=sua_chave_secreta_aqui
-NODE_ENV=development
-PORT=3000
-```
+# Porta de execução do Backend
+BACKEND_PORT=3000
 
-### 2. Servidor B (Banco de Dados e Web)
+# ==========================================
+# 3. CONFIGURAÇÕES PARA O SERVIDOR B 
+# ==========================================
+# Configurações do MySQL (Docker)
+DB_PORT_HOST=3307                 # Porta real exposta pelo servidor
+DB_ROOT_PASSWORD=""
 
-Crie o arquivo em `Argus/server_b_logic/.env`:
-
-```env
-# Fuso Horário
-TZ=America/Sao_Paulo
-
-# Senhas do MySQL
-MYSQL_ROOT_PASSWORD=
-MYSQL_DATABASE=
-MYSQL_USER=
-MYSQL_PASSWORD=
-```
-
+# Configurações do Dashboard (Nginx)
+WEB_PORT=8081                     
+SERVER_A_IP=""
 ---
 
 ## 📂 Passo a Passo para Execução
@@ -84,21 +82,21 @@ docker network create argus-shared-net
 
 ```bash
 cd Argus/server_b_logic
-docker-compose up -d --build
+docker compose --env-file ../.env up -d --build
 ```
 
 ### 3. Execução do Servidor A (Backend/MQTT)
 
 ```bash
 cd ../server_a_logic
-docker-compose up -d --build
+docker compose --env-file ../.env up -d --build
 ```
 
 ---
 
 ## 🔌 Conectar um Novo Dispositivo
 
-1. Acesse `http://localhost` e registre um novo dispositivo usando o mapa interativo.
+1. Acesse `http://IP_SERVIDOR_B:8081` e registre um novo dispositivo usando o mapa interativo.
 2. Obtenha o **Hash do Dispositivo** gerado.
 3. Configure seu hardware para publicar no tópico:
    `argus/<SEU_DEVICE_HASH>/telemetry`
