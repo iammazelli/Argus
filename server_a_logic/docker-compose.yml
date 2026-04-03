@@ -24,8 +24,8 @@ services:
       - DB_HOST=argus-mysql
       - DB_PORT=3306
       - DB_USER=${DB_USER}
-      - DB_PASS=${DB_PASSWORD}
-      - DB_NAME=${DB_NAME}
+      - DB_PASSWORD=${DB_PASSWORD} # Mudado de DB_PASS para DB_PASSWORD
+      - DB_NAME=${DB_DATABASE}
       - MQTT_URL=mqtt://emqx:1883
       - MQTT_USER=${MQTT_USERNAME}
       - MQTT_PASS=${MQTT_PASSWORD}
