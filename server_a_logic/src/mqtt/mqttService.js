@@ -5,7 +5,7 @@ let client = null;
 
 function connect() {
   // Ajustado para MQTT_URL (seu .env) e emqx (nome do container)
-  const brokerUrl = process.env.MQTT_URL || 'mqtt://emqx:1883';
+  const brokerUrl = process.env.MQTT_URL 
   
   console.log('[DEBUG] Tentando conectar ao MQTT em:', brokerUrl);
 
