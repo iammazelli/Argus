@@ -7,25 +7,10 @@ const api = {
   async get(path) {
     const res = await fetch(`${API_BASE}${path}`);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
-  async post(path, body) {
-    const res = await fetch(`${API_BASE}${path}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    if (!res.ok) {
-      const err = await res.json().catch(() => ({}));
-      throw new Error(err.message || `HTTP ${res.status}`);
-    }
-    return res.json();
-  },
-  async delete(path) {
-    const res = await fetch(`${API_BASE}${path}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    return res.json();
-  },
+    const json = await res.json();
+    if (json.error) throw new Error(json.error);
+    return json;
+  }
 };
 
 function formatDate(iso) {

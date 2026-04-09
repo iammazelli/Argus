@@ -53,3 +53,13 @@ CREATE TABLE IF NOT EXISTS Event_Log (
     Event_Time_Stamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (Event_Id) REFERENCES Events(Event_Id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Usuário do backend: permissão de escrita e leitura
+CREATE USER IF NOT EXISTS 'argus_backend'@'%' IDENTIFIED BY 'senha_backend_123';
+GRANT SELECT, INSERT, UPDATE, DELETE ON ArgusDB.* TO 'argus_backend'@'%';
+
+-- Usuário do frontend: apenas leitura
+CREATE USER IF NOT EXISTS 'argus_frontend'@'%' IDENTIFIED BY 'senha_frontend_123';
+GRANT SELECT ON ArgusDB.* TO 'argus_frontend'@'%';
+
+FLUSH PRIVILEGES;
