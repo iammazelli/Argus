@@ -3,7 +3,7 @@ const mysql = require('mysql2/promise')
 const path = require('path')
 
 const app = express();
-const PORT = process.env.WEB_PORT;
+const PORT = 8081;
 
 const pool = mysql.createPool({
     host: process.env.DB_HOST_INTERNAL,
