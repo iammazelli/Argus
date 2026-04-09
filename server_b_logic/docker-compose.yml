@@ -7,15 +7,16 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
       MYSQL_DATABASE: ${DB_DATABASE}
-      MYSQL_USER: ${DB_USER}
-      MYSQL_PASSWORD: ${DB_PASSWORD}
+      # Cria o usuário do backend por padrão
+      MYSQL_USER: ${DB_BACKEND_USER}
+      MYSQL_PASSWORD: ${DB_BACKEND_USER_PASSWORD}
     ports:
       - "${DB_PORT_HOST:-3306}:3306"
     volumes:
       - ./mysql/init:/docker-entrypoint-initdb.d
       - server_b_logic_mysql-data:/var/lib/mysql
 
-frontend-api:
+  frontend-api:
     build: .
     container_name: argus-frontend-api
     restart: unless-stopped
@@ -23,7 +24,7 @@ frontend-api:
     environment:
       - DB_HOST_INTERNAL=argus-mysql
 
-nginx:
+  nginx:
     image: nginx:1.25-alpine
     container_name: argus-nginx
     restart: unless-stopped

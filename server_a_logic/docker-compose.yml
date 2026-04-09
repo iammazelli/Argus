@@ -19,13 +19,11 @@ services:
       - "${BACKEND_PORT:-3000}:3000"
     env_file: [../.env]
     environment:
-      # Aponta para o IP da máquina onde está o Servidor B (MySQL)
       - DB_HOST=${SERVER_B_IP}
       - DB_PORT=${DB_PORT:-3306} 
-      - DB_USER=${DB_USER}
-      - DB_PASSWORD=${DB_PASSWORD}
+      - DB_USER=${DB_BACKEND_USER}
+      - DB_PASSWORD=${DB_BACKEND_USER_PASSWORD}
       - DB_NAME=${DB_DATABASE}
-      # Mantém-se local pois o emqx está neste mesmo compose
       - MQTT_URL=mqtt://emqx:1883
       - MQTT_USER=${MQTT_USERNAME}
       - MQTT_PASS=${MQTT_PASSWORD}
