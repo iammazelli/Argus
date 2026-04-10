@@ -66,7 +66,6 @@ async function handleMessage(topic, payload) {
     
     await Promise.all([
       pool.query('INSERT INTO Real_Time_Data (Device_Id, Data_Payload) VALUES (?, ?)', [deviceId, strPayload]),
-      pool.query('INSERT INTO Historical_Data (Device_Id, Data_Payload) VALUES (?, ?)', [deviceId, strPayload]),
       pool.query('UPDATE Devices SET Device_Last_Seen = NOW() WHERE Device_Id = ?', [deviceId])
     ]);
 
